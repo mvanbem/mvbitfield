@@ -53,7 +53,7 @@ impl Config {
 
         let crate_path = &self.crate_path;
         let bitint_name = format_ident!("U{width}", span = span);
-        let bitint_type = parse_quote! { #crate_path::bitint::types::#bitint_name };
+        let bitint_type = parse_quote! { #crate_path::bitint::#bitint_name };
 
         let primitive_width = width.next_power_of_two().max(8);
         let primitive_name = format_ident!("u{}", primitive_width, span = span);
