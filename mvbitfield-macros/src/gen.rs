@@ -283,6 +283,7 @@ fn generate_accessors(
         return Ok(None);
     }
 
+    let crate_path = &cfg.crate_path;
     let visibility = &bitfield.bitfield.visibility;
     let name = bitfield.bitfield.name_to_string();
     let name_span = bitfield.bitfield.name_span();
@@ -346,7 +347,7 @@ fn generate_accessors(
                 let struct_value = self.to_primitive();
                 let new_value = (struct_value & !#offset_mask) | (field << #shift);
                 // SAFETY: Both operands have only in-range bits set, so the result will, too.
-                unsafe { Self::new_unchecked(new_value) }
+                unsafe { #crate_path::BitfieldStruct::new_unchecked(new_value) }
             }
         }
     };
