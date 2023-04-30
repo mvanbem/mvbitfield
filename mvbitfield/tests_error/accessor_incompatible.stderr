@@ -1,0 +1,128 @@
+error[E0277]: the trait bound `bool: From<U2>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:5:1
+   |
+5  | / bitfield! {
+6  | |     struct FourBitStruct: 4 { .. }
+7  | |
+8  | |     #[msb_first]
+9  | |     struct MyStruct: 32 {
+10 | |         flag_width_mismatch: 2 as bool,
+   | |                                ------- required by a bound introduced by this call
+...  |
+16 | |     }
+17 | | }
+   | |_^ the trait `From<U2>` is not implemented for `bool`
+   |
+   = help: the trait `From<U1>` is implemented for `bool`
+   = note: required for `U2` to implement `Into<bool>`
+
+error[E0277]: the trait bound `U2: From<bool>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:10:32
+   |
+10 |         flag_width_mismatch: 2 as bool,
+   |                                ^^^^^^^ the trait `From<bool>` is not implemented for `U2`
+   |
+   = note: required for `bool` to implement `Into<U2>`
+
+error[E0277]: the trait bound `mvbitfield::prelude::U4: From<U3>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:5:1
+   |
+5  | / bitfield! {
+6  | |     struct FourBitStruct: 4 { .. }
+7  | |
+8  | |     #[msb_first]
+...  |
+11 | |         bitint_width_mismatch: 3 as U4,
+   | |                                  ----- required by a bound introduced by this call
+...  |
+16 | |     }
+17 | | }
+   | |_^ the trait `From<U3>` is not implemented for `mvbitfield::prelude::U4`
+   |
+   = help: the trait `From<FourBitStruct>` is implemented for `mvbitfield::prelude::U4`
+   = note: required for `U3` to implement `Into<mvbitfield::prelude::U4>`
+
+error[E0277]: the trait bound `U3: From<mvbitfield::prelude::U4>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:11:34
+   |
+11 |         bitint_width_mismatch: 3 as U4,
+   |                                  ^^^^^ the trait `From<mvbitfield::prelude::U4>` is not implemented for `U3`
+   |
+   = note: required for `mvbitfield::prelude::U4` to implement `Into<U3>`
+
+error[E0277]: the trait bound `FourBitStruct: From<U5>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:5:1
+   |
+5  | / bitfield! {
+6  | |     struct FourBitStruct: 4 { .. }
+7  | |
+8  | |     #[msb_first]
+...  |
+12 | |         struct_width_mismatch: 5 as FourBitStruct,
+   | |                                  ---------------- required by a bound introduced by this call
+...  |
+16 | |     }
+17 | | }
+   | |_^ the trait `From<U5>` is not implemented for `FourBitStruct`
+   |
+   = help: the trait `From<mvbitfield::prelude::U4>` is implemented for `FourBitStruct`
+   = note: required for `U5` to implement `Into<FourBitStruct>`
+
+error[E0277]: the trait bound `U5: From<FourBitStruct>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:12:34
+   |
+12 |         struct_width_mismatch: 5 as FourBitStruct,
+   |                                  ^^^^^^^^^^^^^^^^ the trait `From<FourBitStruct>` is not implemented for `U5`
+   |
+   = note: required for `FourBitStruct` to implement `Into<U5>`
+
+error[E0277]: the trait bound `(): From<U3>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:5:1
+   |
+5  | / bitfield! {
+6  | |     struct FourBitStruct: 4 { .. }
+7  | |
+8  | |     #[msb_first]
+...  |
+13 | |         unit: 3 as (),
+   | |                 ----- required by a bound introduced by this call
+...  |
+16 | |     }
+17 | | }
+   | |_^ the trait `From<U3>` is not implemented for `()`
+   |
+   = note: required for `U3` to implement `Into<()>`
+
+error[E0277]: the trait bound `U3: From<()>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:13:17
+   |
+13 |         unit: 3 as (),
+   |                 ^^^^^ the trait `From<()>` is not implemented for `U3`
+   |
+   = note: required for `()` to implement `Into<U3>`
+
+error[E0277]: the trait bound `Infallible: From<U2>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:5:1
+   |
+5  | / bitfield! {
+6  | |     struct FourBitStruct: 4 { .. }
+7  | |
+8  | |     #[msb_first]
+...  |
+14 | |         never: 2 as Infallible,
+   | |                  ------------- required by a bound introduced by this call
+15 | |         ..
+16 | |     }
+17 | | }
+   | |_^ the trait `From<U2>` is not implemented for `Infallible`
+   |
+   = help: the trait `From<!>` is implemented for `Infallible`
+   = note: required for `U2` to implement `Into<Infallible>`
+
+error[E0277]: the trait bound `U2: From<Infallible>` is not satisfied
+  --> tests_error/accessor_incompatible.rs:14:18
+   |
+14 |         never: 2 as Infallible,
+   |                  ^^^^^^^^^^^^^ the trait `From<Infallible>` is not implemented for `U2`
+   |
+   = note: required for `Infallible` to implement `Into<U2>`

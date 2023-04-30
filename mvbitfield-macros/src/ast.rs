@@ -189,7 +189,7 @@ impl Parse for BitfieldWidth {
 
 #[derive(Clone)]
 pub enum AccessorType {
-    Overridden { _as_token: Token![as], type_: Type },
+    Overridden { as_token: Token![as], type_: Type },
     Default,
 }
 
@@ -197,7 +197,7 @@ impl Parse for AccessorType {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(Token![as]) {
             Ok(AccessorType::Overridden {
-                _as_token: input.parse()?,
+                as_token: input.parse()?,
                 type_: input.parse()?,
             })
         } else {

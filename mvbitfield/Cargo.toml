@@ -14,8 +14,6 @@ _nightly = []
 [dependencies]
 bitint = { git = "https://github.com/mvanbem/bitint" }
 mvbitfield-macros = { path = "../mvbitfield-macros" }
-paste = "1"
-seq-macro = "0.3"
 
 [dev-dependencies]
 trybuild = "1"

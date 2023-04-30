@@ -40,31 +40,13 @@ pub struct UserDefinedPrimitiveBitfield(pub u8);
 
 impl From<U8> for UserDefinedPrimitiveBitfield {
     fn from(value: U8) -> Self {
-        Self::from_bitint(value)
+        Self(value.to_primitive())
     }
 }
 
 impl From<UserDefinedPrimitiveBitfield> for U8 {
     fn from(value: UserDefinedPrimitiveBitfield) -> Self {
-        value.to_bitint()
-    }
-}
-
-impl Bitfield for UserDefinedPrimitiveBitfield {
-    type Bitint = U8;
-
-    const ZERO: Self = Self(0);
-
-    fn zero() -> Self {
-        Self::ZERO
-    }
-
-    fn from_bitint(value: U8) -> Self {
-        Self(value.to_primitive())
-    }
-
-    fn to_bitint(self) -> U8 {
-        U8::from_primitive(self.0)
+        U8::from_primitive(value.0)
     }
 }
 
@@ -73,26 +55,12 @@ pub struct UserDefinedBitintBitfield(pub U3);
 
 impl From<U3> for UserDefinedBitintBitfield {
     fn from(value: U3) -> Self {
-        Self::from_bitint(value)
+        Self(value)
     }
 }
 
 impl From<UserDefinedBitintBitfield> for U3 {
     fn from(value: UserDefinedBitintBitfield) -> Self {
-        value.to_bitint()
-    }
-}
-
-impl Bitfield for UserDefinedBitintBitfield {
-    type Bitint = U3;
-
-    const ZERO: Self = Self(U3::ZERO);
-
-    fn from_bitint(value: U3) -> Self {
-        Self(value)
-    }
-
-    fn to_bitint(self) -> U3 {
-        self.0
+        value.0
     }
 }

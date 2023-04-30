@@ -22,7 +22,7 @@ use mvbitfield::prelude::*;
 
 bitfield! {
     #[lsb_first]                      // Field packing order
-    #[derive(PartialEq, Eq)]          // Other attributes are passed through
+    #[derive(PartialOrd, Ord)]        // Other attributes are passed through
     pub struct MyBitfieldStruct: 8 {  // Eight bits wide
         _padding: 1,                  // No accessors when name starts with _
         pub some_number: 3,           // Public U3 accessors
@@ -42,10 +42,9 @@ fn main() {
     assert_eq!(x.some_number(), 6_U3);
     assert_eq!(x.some_number().to_primitive(), 6);
 
-    // Custom accessors return the chosen type, which must impl Bitfield.
+    // Custom accessors return the chosen type, which must have Into conversions
+    // to and from the default accessor bitint.
     assert_eq!(x.high_bit_flag(), true);
-    assert_eq!(x.high_bit_flag().to_bitint(), 1_U1);
-    assert_eq!(x.high_bit_flag().to_primitive(), 1u8);
 
     // Zero-cost conversions involving bitfield structs.
     assert_eq!(x.to_bitint(), 0b1_000_110_0_U8);
