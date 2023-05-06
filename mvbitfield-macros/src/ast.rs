@@ -39,7 +39,7 @@ pub struct Struct {
     _colon_token: Token![:],
     pub width: LitInt,
     _brace_token: token::Brace,
-    pub bitfields: Punctuated<Bitfield, Token![,]>,
+    pub fields: Punctuated<Field, Token![,]>,
 }
 
 impl Parse for Struct {
@@ -53,22 +53,22 @@ impl Parse for Struct {
             _colon_token: input.parse()?,
             width: input.parse()?,
             _brace_token: braced!(body in input),
-            bitfields: body.parse_terminated(Bitfield::parse, Token![,])?,
+            fields: body.parse_terminated(Field::parse, Token![,])?,
         })
     }
 }
 
-pub struct Bitfield {
+pub struct Field {
     pub attrs: Vec<Attribute>,
     pub visibility: Visibility,
-    variant: BitfieldVariant,
+    variant: FieldVariant,
 }
 
-enum BitfieldVariant {
+enum FieldVariant {
     Regular {
-        name: BitfieldName,
+        name: FieldName,
         _colon_token: Token![:],
-        width: BitfieldWidth,
+        width: FieldWidth,
         accessor_type: AccessorType,
     },
     DotDot {
@@ -76,11 +76,11 @@ enum BitfieldVariant {
     },
 }
 
-impl Bitfield {
+impl Field {
     pub fn name_to_string(&self) -> String {
         match &self.variant {
-            BitfieldVariant::Regular {
-                name: BitfieldName::Ident(ident),
+            FieldVariant::Regular {
+                name: FieldName::Ident(ident),
                 ..
             } => ident.to_string(),
             _ => "_".to_string(),
@@ -89,18 +89,18 @@ impl Bitfield {
 
     pub fn name_span(&self) -> Span {
         match &self.variant {
-            BitfieldVariant::Regular { name, .. } => match name {
-                BitfieldName::Ident(ident) => ident.span(),
-                BitfieldName::Placeholder(underscore) => underscore.span(),
+            FieldVariant::Regular { name, .. } => match name {
+                FieldName::Ident(ident) => ident.span(),
+                FieldName::Placeholder(underscore) => underscore.span(),
             },
-            BitfieldVariant::DotDot { dot_dot_token } => dot_dot_token.span(),
+            FieldVariant::DotDot { dot_dot_token } => dot_dot_token.span(),
         }
     }
 
     pub fn width(&self) -> Result<Option<u8>> {
         match &self.variant {
-            BitfieldVariant::Regular {
-                width: BitfieldWidth::LitInt(lit_int),
+            FieldVariant::Regular {
+                width: FieldWidth::LitInt(lit_int),
                 ..
             } => Ok(Some(lit_int.base10_parse()?)),
             _ => Ok(None),
@@ -109,23 +109,23 @@ impl Bitfield {
 
     pub fn width_span(&self) -> Span {
         match &self.variant {
-            BitfieldVariant::Regular { width, .. } => match width {
-                BitfieldWidth::LitInt(lit_int) => lit_int.span(),
-                BitfieldWidth::Placeholder(underscore) => underscore.span(),
+            FieldVariant::Regular { width, .. } => match width {
+                FieldWidth::LitInt(lit_int) => lit_int.span(),
+                FieldWidth::Placeholder(underscore) => underscore.span(),
             },
-            BitfieldVariant::DotDot { dot_dot_token } => dot_dot_token.span(),
+            FieldVariant::DotDot { dot_dot_token } => dot_dot_token.span(),
         }
     }
 
     pub fn accessor_type(&self) -> AccessorType {
         match &self.variant {
-            BitfieldVariant::Regular { accessor_type, .. } => accessor_type.clone(),
-            BitfieldVariant::DotDot { .. } => AccessorType::Default,
+            FieldVariant::Regular { accessor_type, .. } => accessor_type.clone(),
+            FieldVariant::DotDot { .. } => AccessorType::Default,
         }
     }
 }
 
-impl Parse for Bitfield {
+impl Parse for Field {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
             attrs: input.call(Attribute::parse_outer)?,
@@ -133,11 +133,11 @@ impl Parse for Bitfield {
             variant: {
                 let lookahead = input.lookahead1();
                 if lookahead.peek(Token![..]) {
-                    BitfieldVariant::DotDot {
+                    FieldVariant::DotDot {
                         dot_dot_token: input.parse()?,
                     }
                 } else if lookahead.peek(Ident) | lookahead.peek(Token![_]) {
-                    BitfieldVariant::Regular {
+                    FieldVariant::Regular {
                         name: input.parse()?,
                         _colon_token: input.parse()?,
                         width: input.parse()?,
@@ -151,12 +151,12 @@ impl Parse for Bitfield {
     }
 }
 
-pub enum BitfieldName {
+pub enum FieldName {
     Ident(Ident),
     Placeholder(Token![_]),
 }
 
-impl Parse for BitfieldName {
+impl Parse for FieldName {
     fn parse(input: ParseStream) -> Result<Self> {
         let lookahead = input.lookahead1();
         if lookahead.peek(Ident) {
@@ -169,12 +169,12 @@ impl Parse for BitfieldName {
     }
 }
 
-pub enum BitfieldWidth {
+pub enum FieldWidth {
     LitInt(LitInt),
     Placeholder(Token![_]),
 }
 
-impl Parse for BitfieldWidth {
+impl Parse for FieldWidth {
     fn parse(input: ParseStream) -> Result<Self> {
         let lookahead = input.lookahead1();
         if lookahead.peek(LitInt) {
@@ -220,7 +220,7 @@ mod tests {
             visibility,
             name,
             width,
-            bitfields: fields,
+            fields,
             ..
         } = syn::parse2(input).unwrap();
         assert!(attrs.is_empty());
@@ -243,7 +243,7 @@ mod tests {
             visibility,
             name,
             width,
-            bitfields: fields,
+            fields,
             ..
         } = syn::parse2(input).unwrap();
         assert_eq!(attrs.len(), 1);
@@ -261,12 +261,12 @@ mod tests {
     #[test]
     fn field_default() {
         let input = quote! { my_field: 5 };
-        let Bitfield {
+        let Field {
             attrs,
             visibility: Visibility::Inherited,
-            variant: BitfieldVariant::Regular {
-                name: BitfieldName::Ident(name),
-                width: BitfieldWidth::LitInt(width),
+            variant: FieldVariant::Regular {
+                name: FieldName::Ident(name),
+                width: FieldWidth::LitInt(width),
                 accessor_type: AccessorType::Default,
                 ..
             },
@@ -279,12 +279,12 @@ mod tests {
     #[test]
     fn field_everything() {
         let input = quote! { pub(crate) my_field: 5 as path::to::Bar };
-        let Bitfield {
+        let Field {
             attrs,
             visibility,
-            variant: BitfieldVariant::Regular {
-                name: BitfieldName::Ident(name),
-                width: BitfieldWidth::LitInt(width),
+            variant: FieldVariant::Regular {
+                name: FieldName::Ident(name),
+                width: FieldWidth::LitInt(width),
                 accessor_type:
                     AccessorType::Overridden {
                         type_: accessor_type,
@@ -305,8 +305,8 @@ mod tests {
         let input = quote! { .. };
         assert!(matches!(
             syn::parse2(input).unwrap(),
-            Bitfield {
-                variant: BitfieldVariant::DotDot { .. },
+            Field {
+                variant: FieldVariant::DotDot { .. },
                 ..
             },
         ));

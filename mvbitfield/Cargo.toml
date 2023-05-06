@@ -12,8 +12,11 @@ doc = []
 _nightly = []
 
 [dependencies]
-bitint = { git = "https://github.com/mvanbem/bitint" }
 mvbitfield-macros = { path = "../mvbitfield-macros" }
+
+[dependencies.bitint]
+git = "https://github.com/mvanbem/bitint"
+rev = "b0a26b96b59a1148093315cdbacdc5143fe9564a"
 
 [dev-dependencies]
 trybuild = "1"
