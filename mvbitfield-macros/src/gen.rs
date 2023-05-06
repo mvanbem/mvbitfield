@@ -4,7 +4,7 @@ use syn::spanned::Spanned;
 use syn::{Error, Path, Result};
 
 use crate::ast::{self, AccessorType, Input};
-use crate::pack::{pack, PackDir, PackedBitfield};
+use crate::pack::{pack, PackDir, PackedField};
 
 struct Config {
     crate_path: Path,
@@ -12,7 +12,9 @@ struct Config {
 
 struct BitintTypeInfo {
     bitint_type: TokenStream,
+    bitint_name: String,
     primitive_type: TokenStream,
+    primitive_name: String,
 }
 
 impl BitintTypeInfo {
@@ -67,7 +69,9 @@ impl Config {
 
         Ok(BitintTypeInfo {
             bitint_type,
+            bitint_name: bitint_name.to_string(),
             primitive_type,
+            primitive_name: primitive_name.to_string(),
         })
     }
 }
@@ -132,10 +136,17 @@ fn generate_struct_impl(cfg: &Config, input: ast::Struct) -> Result<TokenStream>
     let struct_width = input.width.base10_parse()?;
     let BitintTypeInfo {
         primitive_type: struct_primitive_type,
+        primitive_name: struct_primitive_name,
         bitint_type: struct_bitint_type,
+        bitint_name: struct_bitint_name,
     } = cfg.type_info_for_width(struct_width, input.width.span())?;
 
     let crate_path = &cfg.crate_path;
+
+    let doc = format!(
+        "\n\nThis type is a generated bitfield struct. The `bitint` type is `{struct_bitint_name}` \
+            and the primitive type is [`{struct_primitive_name}`].",
+    );
 
     let (from_primitive_method, from_primitive_impl) =
         if [8, 16, 32, 64, 128].contains(&struct_width) {
@@ -176,13 +187,13 @@ fn generate_struct_impl(cfg: &Config, input: ast::Struct) -> Result<TokenStream>
             (from_primitive_method, from_primitive_impl)
         };
 
-    // Collect bitfield items.
-    let mut bitfield_items = Vec::new();
-    for bitfield in pack(pack_dir, name.span(), struct_width, input.bitfields)? {
-        match generate_accessors(cfg, &struct_primitive_type, bitfield) {
-            Ok(Some(tokens)) => bitfield_items.push(tokens),
+    // Collect field items.
+    let mut field_items = Vec::new();
+    for field in pack(pack_dir, name.span(), struct_width, input.fields)? {
+        match generate_accessors(cfg, &struct_primitive_type, field) {
+            Ok(Some(tokens)) => field_items.push(tokens),
             Ok(None) => (),
-            Err(e) => bitfield_items.push(e.into_compile_error()),
+            Err(e) => field_items.push(e.into_compile_error()),
         }
     }
 
@@ -199,12 +210,67 @@ fn generate_struct_impl(cfg: &Config, input: ast::Struct) -> Result<TokenStream>
         )]
         #[repr(transparent)]
         #(#other_attrs)*
+        #[doc = #doc]
         #visibility struct #name {
             value: #struct_bitint_type,
         }
 
         #[allow(dead_code)]
         impl #name {
+            /// The type's zero value.
+            pub const ZERO: Self = Self { value: #struct_bitint_type::ZERO };
+
+            /// Returns the type's zero value.
+            ///
+            /// This method is a `const` variant of
+            /// [`BitfieldStruct::zero`](::mvbitfield::BitfieldStruct::zero).
+            #[inline(always)]
+            #[must_use]
+            pub const fn zero() -> Self {
+                Self::ZERO
+            }
+
+            /// Creates a bitfield struct value from a primitive value if it is
+            /// in range for the `bitint` type.
+            ///
+            /// This method is a `const` variant of
+            /// [`BitfieldStruct::new`](::mvbitfield::BitfieldStruct::new).
+            #[inline(always)]
+            #[must_use]
+            pub const fn new(value: #struct_primitive_type) -> Option<Self> {
+                match #struct_bitint_type::new(value) {
+                    Some(value) => Some(Self::from_bitint(value)),
+                    None => None,
+                }
+            }
+
+            /// Creates a bitfield struct value by masking off the upper bits of
+            /// a primitive value.
+            ///
+            /// This method is a `const` variant of
+            /// [`BitfieldStruct::new_masked`](::mvbitfield::BitfieldStruct::new_masked).
+            #[inline(always)]
+            #[must_use]
+            pub const fn new_masked(value: #struct_primitive_type) -> Self {
+                Self::from_bitint(#struct_bitint_type::new_masked(value))
+            }
+
+            /// Creates a bitfield struct value from a primitive value without
+            /// checking whether it is in range for the `bitint` type.
+            ///
+            /// This method is a `const` variant of
+            /// [`BitfieldStruct::new_unchecked`](::mvbitfield::BitfieldStruct::new_unchecked).
+            ///
+            /// # Safety
+            ///
+            /// The value must be in range for the `bitint` type, as determined
+            /// by [`UBitint::is_in_range`](::bitint::UBitint::is_in_range).
+            #[inline(always)]
+            #[must_use]
+            pub const unsafe fn new_unchecked(value: #struct_primitive_type) -> Self {
+                Self::from_bitint(#struct_bitint_type::new_unchecked(value))
+            }
+
             /// Creates a bitfield struct value from a `bitint` value.
             ///
             /// This is a zero-cost conversion.
@@ -238,7 +304,7 @@ fn generate_struct_impl(cfg: &Config, input: ast::Struct) -> Result<TokenStream>
                 self.to_bitint().to_primitive()
             }
 
-            #(#bitfield_items)*
+            #(#field_items)*
         }
 
         impl ::core::convert::From<#struct_bitint_type> for #name {
@@ -267,7 +333,24 @@ fn generate_struct_impl(cfg: &Config, input: ast::Struct) -> Result<TokenStream>
         impl #crate_path::BitfieldStruct for #name {
             type Bitint = #struct_bitint_type;
 
-            const ZERO: Self = Self { value: #crate_path::bitint::UBitint::ZERO };
+            type Primitive = #struct_primitive_type;
+
+            const ZERO: Self = Self::ZERO;
+
+            #[inline(always)]
+            fn new(value: #struct_primitive_type) -> Option<Self> {
+                Self::new(value)
+            }
+
+            #[inline(always)]
+            fn new_masked(value: #struct_primitive_type) -> Self {
+                Self::new_masked(value)
+            }
+
+            #[inline(always)]
+            unsafe fn new_unchecked(value: #struct_primitive_type) -> Self {
+                Self::new_unchecked(value)
+            }
         }
     })
 }
@@ -275,37 +358,37 @@ fn generate_struct_impl(cfg: &Config, input: ast::Struct) -> Result<TokenStream>
 fn generate_accessors(
     cfg: &Config,
     struct_primitive_type: &TokenStream,
-    bitfield: PackedBitfield,
+    field: PackedField,
 ) -> Result<Option<TokenStream>> {
     // Reserved fields do not generate any code.
-    let name = bitfield.bitfield.name_to_string();
+    let name = field.field.name_to_string();
     if name.starts_with('_') {
         return Ok(None);
     }
 
     let crate_path = &cfg.crate_path;
-    let visibility = &bitfield.bitfield.visibility;
-    let name = bitfield.bitfield.name_to_string();
-    let name_span = bitfield.bitfield.name_span();
+    let visibility = &field.field.visibility;
+    let name = field.field.name_to_string();
+    let name_span = field.field.name_span();
     let AccessorTypeInfo {
         error_span: s,
         accessor_type,
         bitint_type: accessor_bitint_type,
         primitive_type: accessor_primitive_type,
     } = cfg
-        .type_info_for_width(bitfield.width, bitfield.width_span)?
-        .with_accessor_type(bitfield.bitfield.accessor_type());
+        .type_info_for_width(field.width, field.width_span)?
+        .with_accessor_type(field.field.accessor_type());
 
-    let shift = Literal::usize_unsuffixed(bitfield.offset);
+    let shift = Literal::usize_unsuffixed(field.offset);
     let offset_mask = {
         let mut literal = Literal::u128_unsuffixed(
-            if bitfield.width == 128 {
+            if field.width == 128 {
                 u128::MAX
             } else {
-                (1 << bitfield.width) - 1
-            } << bitfield.offset,
+                (1 << field.width) - 1
+            } << field.offset,
         );
-        literal.set_span(bitfield.width_span);
+        literal.set_span(field.width_span);
         literal
     };
 
@@ -317,7 +400,7 @@ fn generate_accessors(
     let update_method_name = format_ident!("update_{}", &name, span = name_span);
 
     let get_method = {
-        let doc = format!("Extracts the `{}` bitfield.", name);
+        let doc = format!("Extracts the `{}` field.", name);
         quote_spanned! {s=>
             #[doc = #doc]
             #[inline(always)]
@@ -331,7 +414,7 @@ fn generate_accessors(
     };
 
     let with_method = {
-        let doc = format!("Creates a new value with the given `{}` bitfield.", name);
+        let doc = format!("Creates a new value with the given `{}` field.", name);
         quote_spanned! {s=>
             #[doc = #doc]
             #[inline(always)]
@@ -354,7 +437,7 @@ fn generate_accessors(
 
     let map_method: TokenStream = {
         let doc = format!(
-            "Creates a new value by mapping the `{}` bitfield to a new one.",
+            "Creates a new value by mapping the `{}` field to a new one.",
             name,
         );
         quote! {
@@ -371,7 +454,7 @@ fn generate_accessors(
     };
 
     let set_method: TokenStream = {
-        let doc = format!("Sets the `{}` bitfield.", name);
+        let doc = format!("Sets the `{}` field.", name);
         quote! {
             #[doc = #doc]
             #[inline(always)]
@@ -382,10 +465,7 @@ fn generate_accessors(
     };
 
     let replace_method = {
-        let doc = format!(
-            "Replaces the `{}` bitfield and returns the old value.",
-            name,
-        );
+        let doc = format!("Replaces the `{}` field and returns the old value.", name,);
         quote! {
             #[doc = #doc]
             #[inline(always)]
@@ -402,7 +482,7 @@ fn generate_accessors(
 
     let update_method = {
         let doc = format!(
-            "Updates the `{}` bitfield using a function and returns the old value.",
+            "Updates the `{}` field using a function and returns the old value.",
             name
         );
         quote! {
