@@ -15,6 +15,7 @@ features = ["doc", "_nightly"]
 [features]
 doc = []
 _nightly = []
+_trybuild_tests = []
 
 [dependencies]
 bitint = { workspace = true }
