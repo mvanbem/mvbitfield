@@ -1,5 +1,4 @@
-//! `mvbitfield` generates bitfield struct types that can insert and extract
-//! bit-aligned fields.
+//! `mvbitfield` generates types to work with bit-aligned fields.
 //!
 //! Bitfield structs serve roughly the same use cases as C/C++ structs with
 //! bit-field members.
@@ -11,6 +10,9 @@
 //! - **Flexible and type-safe** with optional user-defined field accessor
 //!   types.
 //! - **Suitable for FFI and memory-mapped I/O** with care, as always.
+//!
+//! Bitfield enums are unit-only Rust enums with a declared bit width that can
+//! be used as bitfield struct field accessors.
 //!
 //! # Demo
 //!
@@ -208,6 +210,34 @@
 //! ```
 //!
 //! where `my_field` is the field name and `T` is the field accessor type.
+//!
+//! # Bitfield enums
+//!
+//! ```
+//! # use mvbitfield::prelude::*;
+//! bitfield! {
+//!     pub enum RenderMode: 3 {
+//!         PointList,
+//!         LineList,
+//!         LineStrip,
+//!         TriangleList,
+//!         TriangleStrip,
+//!         TriangleFan,
+//!         QuadList,
+//!         ..
+//!     }
+//! }
+//!
+//! #[bitint_literals]
+//! fn main() {
+//!     assert_eq!(RenderMode::from_bitint(4_U3), RenderMode::TriangleStrip);
+//!     assert_eq!(RenderMode::TriangleStrip.to_bitint(), 4_U3);
+//!     assert_eq!(RenderMode::TriangleStrip.to_primitive(), 4);
+//!
+//!     // Variants are generated for each unused discriminant.
+//!     assert_eq!(RenderMode::from_bitint(7_U3), RenderMode::Unused7);
+//! }
+//! ```
 //!
 //! # Declaration syntax
 //!

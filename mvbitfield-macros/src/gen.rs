@@ -1,9 +1,11 @@
+use std::collections::BTreeMap;
+
 use proc_macro2::{Literal, Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
-use syn::{Error, Path, Result};
+use syn::{Attribute, Error, Path, Result, Visibility};
 
-use crate::ast::{self, AccessorType, Input};
+use crate::ast::{self, FieldAccessorType, Input};
 use crate::pack::{pack, PackDir, PackedField};
 
 struct Config {
@@ -18,15 +20,15 @@ struct BitintTypeInfo {
 }
 
 impl BitintTypeInfo {
-    fn with_accessor_type(self, accessor_type: AccessorType) -> AccessorTypeInfo {
+    fn with_accessor_type(self, accessor_type: FieldAccessorType) -> AccessorTypeInfo {
         match accessor_type {
-            AccessorType::Overridden { as_token, type_ } => AccessorTypeInfo {
+            FieldAccessorType::Overridden { as_token, type_ } => AccessorTypeInfo {
                 error_span: as_token.span().join(type_.span()).unwrap_or(type_.span()),
                 accessor_type: type_.into_token_stream(),
                 bitint_type: self.bitint_type,
                 primitive_type: self.primitive_type,
             },
-            AccessorType::Default => AccessorTypeInfo {
+            FieldAccessorType::Default => AccessorTypeInfo {
                 error_span: self.bitint_type.span(),
                 accessor_type: self.bitint_type.clone(),
                 bitint_type: self.bitint_type,
@@ -78,17 +80,31 @@ pub fn bitfield_impl(input: Input) -> TokenStream {
     let cfg = Config {
         crate_path: input.crate_path,
     };
-    let results: Vec<_> = input
-        .structs
+    let items: Vec<_> = input
+        .items
         .into_iter()
-        .map(|struct_| generate_struct(&cfg, struct_))
+        .map(|item| generate_item(&cfg, item))
         .collect();
-    quote! { #(#results)* }
+    quote! { #(#items)* }
 }
 
-fn generate_struct(cfg: &Config, input: ast::Struct) -> TokenStream {
+fn generate_item(cfg: &Config, item: ast::Item) -> TokenStream {
+    match item.kind {
+        ast::ItemKind::Struct(struct_) => {
+            generate_struct(cfg, item.attrs, item.visibility, struct_)
+        }
+        ast::ItemKind::Enum(enum_) => generate_enum(cfg, item.attrs, item.visibility, enum_),
+    }
+}
+
+fn generate_struct(
+    cfg: &Config,
+    attrs: Vec<Attribute>,
+    visibility: Visibility,
+    input: ast::Struct,
+) -> TokenStream {
     let cloned_name = input.name.clone();
-    match generate_struct_impl(cfg, input) {
+    match generate_struct_impl(cfg, attrs, visibility, input) {
         Ok(result) => result,
         Err(e) => {
             let compile_error = e.into_compile_error();
@@ -100,11 +116,16 @@ fn generate_struct(cfg: &Config, input: ast::Struct) -> TokenStream {
     }
 }
 
-fn generate_struct_impl(cfg: &Config, input: ast::Struct) -> Result<TokenStream> {
+fn generate_struct_impl(
+    cfg: &Config,
+    attrs: Vec<Attribute>,
+    visibility: Visibility,
+    input: ast::Struct,
+) -> Result<TokenStream> {
     let mut pack_dir = None;
     let mut other_attrs = Vec::new();
 
-    for attr in input.attrs {
+    for attr in attrs {
         match attr.path() {
             path if path.is_ident("lsb_first") => {
                 attr.meta.require_path_only()?;
@@ -196,7 +217,6 @@ fn generate_struct_impl(cfg: &Config, input: ast::Struct) -> Result<TokenStream>
     }
 
     // Emit the struct and impl block.
-    let visibility = input.visibility;
     Ok(quote! {
         #[derive(
             ::core::clone::Clone,
@@ -505,4 +525,196 @@ fn generate_accessors(
         #replace_method
         #update_method
     }))
+}
+
+fn generate_enum(
+    cfg: &Config,
+    attrs: Vec<Attribute>,
+    visibility: Visibility,
+    input: ast::Enum,
+) -> TokenStream {
+    let cloned_name = input.name.clone();
+    match generate_enum_impl(cfg, attrs, visibility, input) {
+        Ok(result) => result,
+        Err(e) => {
+            let compile_error = e.into_compile_error();
+            quote! {
+                #compile_error
+                enum #cloned_name {}
+            }
+        }
+    }
+}
+
+fn generate_enum_impl(
+    cfg: &Config,
+    attrs: Vec<Attribute>,
+    visibility: Visibility,
+    input: ast::Enum,
+) -> Result<TokenStream> {
+    let name = input.name;
+    let enum_width = input.width.base10_parse()?;
+    let BitintTypeInfo {
+        primitive_type: enum_primitive_type,
+        bitint_type: enum_bitint_type,
+        ..
+    } = cfg.type_info_for_width(enum_width, input.width.span())?;
+    let max: usize = (1 << enum_width) - 1;
+
+    // Gather declared variants.
+    let mut variants_by_discriminant = BTreeMap::new();
+    let mut next_discriminant: usize = 0;
+    let mut dot_dot_span = None;
+    for variant in input.variants {
+        match variant {
+            ast::Variant::Regular { name, discriminant } => {
+                if let Some(dot_dot_span) = dot_dot_span {
+                    return Err(Error::new(
+                        dot_dot_span,
+                        "regular variants may not follow a `..` variant",
+                    ));
+                }
+
+                match discriminant {
+                    Some(ast::Discriminant { literal, .. }) => {
+                        next_discriminant = literal.base10_parse()?;
+                        if next_discriminant > max {
+                            return Err(Error::new(
+                                name.span().join(literal.span()).unwrap_or(literal.span()),
+                                format!("discriminant out of range for U{enum_width}"),
+                            ));
+                        }
+                    }
+                    None => {
+                        if next_discriminant > max {
+                            return Err(Error::new(
+                                name.span(),
+                                format!("discriminant out of range for U{enum_width}"),
+                            ));
+                        }
+                    }
+                }
+
+                let s = name.span();
+                let discriminant: Literal = {
+                    let mut literal = Literal::usize_unsuffixed(next_discriminant);
+                    literal.set_span(s);
+                    literal
+                };
+                variants_by_discriminant.insert(
+                    next_discriminant,
+                    quote_spanned!(s=> #name = #discriminant,),
+                );
+                next_discriminant += 1;
+            }
+            ast::Variant::DotDot { dot_dot_token } => {
+                if dot_dot_span.is_some() {
+                    return Err(Error::new(
+                        dot_dot_token.span(),
+                        "only up to one `..` variant is permitted",
+                    ));
+                }
+                dot_dot_span = Some(dot_dot_token.span());
+            }
+        }
+    }
+
+    // Enforce that all discriminants are used.
+    if let Some(dot_dot_span) = dot_dot_span {
+        for discriminant in 0..=max {
+            if !variants_by_discriminant.contains_key(&discriminant) {
+                let variant = format_ident!("Unused{discriminant}", span = dot_dot_span);
+                let discriminant_literal: Literal = {
+                    let mut literal = Literal::usize_unsuffixed(discriminant);
+                    literal.set_span(dot_dot_span);
+                    literal
+                };
+                variants_by_discriminant.insert(
+                    discriminant,
+                    quote_spanned!(dot_dot_span=> #variant = #discriminant_literal),
+                );
+            }
+        }
+    } else if variants_by_discriminant.len() != 1 << enum_width {
+        return Err(Error::new(
+            name.span(),
+            "unused discriminants; consider specifying a `..` variant",
+        ));
+    }
+    let variants = Vec::from_iter(variants_by_discriminant.into_values());
+
+    Ok(quote! {
+        #[derive(Clone, Copy, Debug, Eq)]
+        #[repr(#enum_primitive_type)]
+        #(#attrs)*
+        #visibility enum #name {
+            #(#variants)*
+        }
+
+        impl #name {
+            pub fn new(value: #enum_primitive_type) -> Option<Self> {
+                match #enum_bitint_type::new(value) {
+                    Some(value) => Some(Self::from_bitint(value)),
+                    None => None,
+                }
+            }
+
+            #[inline(always)]
+            #[must_use]
+            pub fn from_bitint(value: #enum_bitint_type) -> Self {
+                // SAFETY: Self is a field-less enum with a primitive
+                // representation, so its layout is the same as the
+                // discriminant.
+                //
+                // In addition, the set of valid discriminants is the same as
+                // the set of valid primitive values for the bitint type.
+                unsafe { ::core::mem::transmute(value.to_primitive()) }
+            }
+
+            #[inline(always)]
+            #[must_use]
+            pub fn to_bitint(self) -> #enum_bitint_type {
+                // SAFETY: Self is a field-less enum with a primitive
+                // representation, so its layout is the same as the
+                // discriminant.
+                //
+                // In addition, the set of valid discriminants is the same as
+                // the set of valid primitive values for the bitint type.
+                unsafe { ::core::mem::transmute(self) }
+            }
+
+            #[inline(always)]
+            #[must_use]
+            pub fn to_primitive(self) -> #enum_primitive_type {
+                self.to_bitint().to_primitive()
+            }
+        }
+
+        impl ::core::cmp::PartialEq for #name {
+            #[inline(always)]
+            fn eq(&self, rhs: &Self) -> bool {
+                ::core::cmp::PartialEq::eq(&self.to_bitint(), &rhs.to_bitint())
+            }
+        }
+
+        impl ::core::hash::Hash for #name {
+            fn hash<H: ::core::hash::Hasher>(&self, state: &mut H) {
+                ::core::hash::Hash::hash(&self.to_bitint(), state);
+            }
+        }
+
+        impl ::core::convert::From<#enum_bitint_type> for #name {
+            #[inline(always)]
+            fn from(value: #enum_bitint_type) -> Self {
+                Self::from_bitint(value)
+            }
+        }
+
+        impl ::core::convert::From<#name> for #enum_bitint_type {
+            #[inline(always)]
+            fn from(value: #name) -> Self {
+                value.to_bitint()
+            }
+        }
+    })
 }

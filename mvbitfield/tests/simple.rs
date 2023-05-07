@@ -1,10 +1,17 @@
 use mvbitfield::prelude::*;
 
 bitfield! {
+    pub enum MyEnum: 2 {
+        One = 1,
+        Two,
+        Three,
+        Zero = 0,
+    }
+
     #[msb_first]
     pub struct MyStruct: 16 {
         pub high_bit: 1 as bool,
-        pub next_two_bits: 2,
+        pub next_two_bits: 2 as MyEnum,
         ..,
         pub a_low_bit: 1,
         pub last_three_bits: 3,
@@ -17,7 +24,7 @@ fn test_with_zeros() {
     assert_eq!(
         MyStruct::zero()
             .with_high_bit(false)
-            .with_next_two_bits(0_U2)
+            .with_next_two_bits(MyEnum::Zero)
             .with_a_low_bit(0_U1)
             .with_last_three_bits(0_U3)
             .to_primitive(),
@@ -33,11 +40,15 @@ fn test_with_bits() {
         0b1_00_000000000_0_000,
     );
     assert_eq!(
-        MyStruct::zero().with_next_two_bits(2_U2).to_primitive(),
+        MyStruct::zero()
+            .with_next_two_bits(MyEnum::Two)
+            .to_primitive(),
         0b0_10_000000000_0_000,
     );
     assert_eq!(
-        MyStruct::zero().with_next_two_bits(1_U2).to_primitive(),
+        MyStruct::zero()
+            .with_next_two_bits(MyEnum::One)
+            .to_primitive(),
         0b0_01_000000000_0_000,
     );
     assert_eq!(
@@ -64,10 +75,10 @@ fn test_map() {
     assert_eq!(
         MyStruct::zero()
             .with_high_bit(true)
-            .with_next_two_bits(0_U2)
+            .with_next_two_bits(MyEnum::Zero)
             .map_next_two_bits(|old| {
-                assert_eq!(old, 0_U2);
-                3_U2
+                assert_eq!(old, MyEnum::Zero);
+                MyEnum::Three
             })
             .to_primitive(),
         0b1_11_000000000_0_000,
@@ -75,10 +86,10 @@ fn test_map() {
     assert_eq!(
         MyStruct::zero()
             .with_high_bit(true)
-            .with_next_two_bits(3_U2)
+            .with_next_two_bits(MyEnum::Three)
             .map_next_two_bits(|old| {
-                assert_eq!(old, 3_U2);
-                0_U2
+                assert_eq!(old, MyEnum::Three);
+                MyEnum::Zero
             })
             .to_primitive(),
         0b1_00_000000000_0_000,
@@ -90,11 +101,11 @@ fn test_map() {
 fn test_set() {
     let mut value = MyStruct::zero()
         .with_high_bit(true)
-        .with_next_two_bits(0_U2);
-    value.set_next_two_bits(3_U2);
+        .with_next_two_bits(MyEnum::Zero);
+    value.set_next_two_bits(MyEnum::Three);
     assert_eq!(value.to_primitive(), 0b1_11_000000000_0_000);
 
-    value.set_next_two_bits(0_U2);
+    value.set_next_two_bits(MyEnum::Zero);
     assert_eq!(value.to_primitive(), 0b1_00_000000000_0_000);
 }
 
@@ -103,11 +114,11 @@ fn test_set() {
 fn test_replace() {
     let mut value = MyStruct::zero()
         .with_high_bit(true)
-        .with_next_two_bits(0_U2);
-    assert_eq!(value.replace_next_two_bits(3_U2), 0_U2);
+        .with_next_two_bits(MyEnum::Zero);
+    assert_eq!(value.replace_next_two_bits(MyEnum::Three), MyEnum::Zero);
     assert_eq!(value.to_primitive(), 0b1_11_000000000_0_000);
 
-    assert_eq!(value.replace_next_two_bits(0_U2), 3_U2);
+    assert_eq!(value.replace_next_two_bits(MyEnum::Zero), MyEnum::Three);
     assert_eq!(value.to_primitive(), 0b1_00_000000000_0_000);
 }
 
@@ -116,22 +127,22 @@ fn test_replace() {
 fn test_update() {
     let mut value = MyStruct::zero()
         .with_high_bit(true)
-        .with_next_two_bits(0_U2);
+        .with_next_two_bits(MyEnum::Zero);
     assert_eq!(
         value.update_next_two_bits(|old| {
-            assert_eq!(old, 0_U2);
-            3_U2
+            assert_eq!(old, MyEnum::Zero);
+            MyEnum::Three
         }),
-        0_U2,
+        MyEnum::Zero,
     );
     assert_eq!(value.to_primitive(), 0b1_11_000000000_0_000);
 
     assert_eq!(
         value.update_next_two_bits(|old| {
-            assert_eq!(old, 3_U2);
-            0_U2
+            assert_eq!(old, MyEnum::Three);
+            MyEnum::Zero
         }),
-        3_U2,
+        MyEnum::Three,
     );
     assert_eq!(value.to_primitive(), 0b1_00_000000000_0_000);
 }
