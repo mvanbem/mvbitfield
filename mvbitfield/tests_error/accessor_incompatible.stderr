@@ -48,6 +48,7 @@ error[E0277]: the trait bound `U3: From<mvbitfield::prelude::U4>` is not satisfi
 11 |         bitint_width_mismatch: 3 as U4,
    |                                  ^^^^^ the trait `From<mvbitfield::prelude::U4>` is not implemented for `U3`
    |
+   = help: the trait `From<CustomBitint3>` is implemented for `U3`
    = note: required for `mvbitfield::prelude::U4` to implement `Into<U3>`
 
 error[E0277]: the trait bound `FourBitStruct: From<U5>` is not satisfied
@@ -99,6 +100,7 @@ error[E0277]: the trait bound `U3: From<()>` is not satisfied
 13 |         unit: 3 as (),
    |                 ^^^^^ the trait `From<()>` is not implemented for `U3`
    |
+   = help: the trait `From<CustomBitint3>` is implemented for `U3`
    = note: required for `()` to implement `Into<U3>`
 
 error[E0277]: the trait bound `Infallible: From<U2>` is not satisfied
