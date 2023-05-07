@@ -622,18 +622,17 @@ fn generate_enum_impl(
     // Enforce that all discriminants are used.
     if let Some(dot_dot_span) = dot_dot_span {
         for discriminant in 0..=max {
-            if !variants_by_discriminant.contains_key(&discriminant) {
-                let variant = format_ident!("Unused{discriminant}", span = dot_dot_span);
-                let discriminant_literal: Literal = {
-                    let mut literal = Literal::usize_unsuffixed(discriminant);
-                    literal.set_span(dot_dot_span);
-                    literal
-                };
-                variants_by_discriminant.insert(
-                    discriminant,
-                    quote_spanned!(dot_dot_span=> #variant = #discriminant_literal),
-                );
-            }
+            variants_by_discriminant
+                .entry(discriminant)
+                .or_insert_with(|| {
+                    let variant = format_ident!("Unused{discriminant}", span = dot_dot_span);
+                    let discriminant_literal: Literal = {
+                        let mut literal = Literal::usize_unsuffixed(discriminant);
+                        literal.set_span(dot_dot_span);
+                        literal
+                    };
+                    quote_spanned!(dot_dot_span=> #variant = #discriminant_literal)
+                });
         }
     } else if variants_by_discriminant.len() != 1 << enum_width {
         return Err(Error::new(
