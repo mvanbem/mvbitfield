@@ -1,5 +1,18 @@
 [workspace]
-members = [
-    "mvbitfield",
-    "mvbitfield-macros",
-]
+members = ["mvbitfield", "mvbitfield-macros"]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Michael VanBemmel <mvanbem@mvanbem.net>"]
+edition = "2021"
+repository = "https://github.com/mvanbem/mvbitfield"
+license = "MIT"
+
+[workspace.dependencies]
+bitint = { git = "https://github.com/mvanbem/bitint", rev = "656a5ec82d59a2a0a10a19b0028a60dfd4dd36e3" }
+mvbitfield = { path = "mvbitfield" }
+mvbitfield-macros = { path = "mvbitfield-macros" }
+proc-macro2 = "1"
+quote = "1"
+syn = "2"
+trybuild = "1"
