@@ -99,7 +99,7 @@ pub fn pack<I: Iterator<Item = Field> + ExactSizeIterator>(
         Some(field) => {
             return Err(Error::new(
                 field.name_span(),
-                format!("no bits available for flexible field"),
+                "no bits available for flexible field",
             ))
         }
         None if available == 0 => None,

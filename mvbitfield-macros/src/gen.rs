@@ -20,17 +20,15 @@ struct BitintTypeInfo {
 impl BitintTypeInfo {
     fn with_accessor_type(self, accessor_type: AccessorType) -> AccessorTypeInfo {
         match accessor_type {
-            AccessorType::Overridden { as_token, type_ } => match type_ {
-                type_ => AccessorTypeInfo {
-                    error_span: as_token.span().join(type_.span()).unwrap_or(type_.span()),
-                    accessor_type: type_.into_token_stream(),
-                    bitint_type: self.bitint_type,
-                    primitive_type: self.primitive_type,
-                },
+            AccessorType::Overridden { as_token, type_ } => AccessorTypeInfo {
+                error_span: as_token.span().join(type_.span()).unwrap_or(type_.span()),
+                accessor_type: type_.into_token_stream(),
+                bitint_type: self.bitint_type,
+                primitive_type: self.primitive_type,
             },
             AccessorType::Default => AccessorTypeInfo {
                 error_span: self.bitint_type.span(),
-                accessor_type: self.bitint_type.clone().into(),
+                accessor_type: self.bitint_type.clone(),
                 bitint_type: self.bitint_type,
                 primitive_type: self.primitive_type,
             },
@@ -406,6 +404,7 @@ fn generate_accessors(
             #[inline(always)]
             #[must_use]
             #visibility fn #get_method_name(self) -> #accessor_type {
+                #[allow(clippy::unnecessary_cast)]
                 ::core::convert::Into::into(#accessor_bitint_type::new_masked(
                     (self.to_primitive() >> #shift) as #accessor_primitive_type,
                 ))
@@ -421,6 +420,7 @@ fn generate_accessors(
             #[must_use]
             #visibility fn #with_method_name(self, value: #accessor_type) -> Self {
                 let field: #accessor_bitint_type = ::core::convert::Into::into(value);
+                #[allow(clippy::unnecessary_cast)]
                 let field = field.to_primitive() as #struct_primitive_type;
                 // // This is a redundant operation but it helps the compiler emit the `rlwimi`
                 // // instruction on PowerPC.
