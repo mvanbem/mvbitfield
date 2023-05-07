@@ -1,13 +1,15 @@
 [package]
 name = "mvbitfield-macros"
-version = "0.1.0"
-edition = "2021"
-license = "MIT"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1"
-quote = "1"
-syn = "2"
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }

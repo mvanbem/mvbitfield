@@ -1,8 +1,13 @@
 [package]
 name = "mvbitfield"
-version = "0.1.0"
-edition = "2021"
-license = "MIT"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Generates bitfield struct types that can insert and extract bit-aligned fields."
+repository.workspace = true
+license.workspace = true
+keywords = ["bitint", "bit", "bitfield", "bitflag"]
+categories = ["data-structures", "no-std"]
 
 [package.metadata.docs.rs]
 features = ["doc", "_nightly"]
@@ -12,11 +17,8 @@ doc = []
 _nightly = []
 
 [dependencies]
-mvbitfield-macros = { path = "../mvbitfield-macros" }
-
-[dependencies.bitint]
-git = "https://github.com/mvanbem/bitint"
-rev = "b0a26b96b59a1148093315cdbacdc5143fe9564a"
+bitint = { workspace = true }
+mvbitfield-macros = { workspace = true }
 
 [dev-dependencies]
-trybuild = "1"
+trybuild = { workspace = true }
