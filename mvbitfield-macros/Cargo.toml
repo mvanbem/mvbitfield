@@ -3,6 +3,7 @@ name = "mvbitfield-macros"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+description = "mvbitfield's proc macros."
 repository.workspace = true
 license.workspace = true
 
