@@ -9,9 +9,9 @@ repository = "https://github.com/mvanbem/mvbitfield"
 license = "MIT"
 
 [workspace.dependencies]
-bitint = { git = "https://github.com/mvanbem/bitint", rev = "33defb2f9632998efe1cfa41e0d59e2e01f24768" }
-mvbitfield = { path = "mvbitfield" }
-mvbitfield-macros = { path = "mvbitfield-macros" }
+bitint = "0.1"
+mvbitfield = { path = "mvbitfield", version = "0.1" }
+mvbitfield-macros = { path = "mvbitfield-macros", version = "0.1" }
 proc-macro2 = "1"
 quote = "1"
 syn = "2"
