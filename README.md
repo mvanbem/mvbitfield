@@ -1,5 +1,16 @@
 # mvbitfield
 
+[![crates.io][crates-badge]][crates-url]
+[![docs.rs][docs-badge]][docs-url]
+[![CI Status][ci-badge]][ci-url]
+
+[crates-badge]: https://img.shields.io/crates/v/mvbitfield
+[crates-url]: https://crates.io/crates/mvbitfield
+[docs-badge]: https://img.shields.io/docsrs/mvbitfield
+[docs-url]: https://docs.rs/mvbitfield
+[ci-badge]: https://img.shields.io/github/actions/workflow/status/mvanbem/mvbitfield/ci.yml?branch=main&label=CI&logo=github
+[ci-url]: https://github.com/mvanbem/mvbitfield/actions?query=workflow%3ACI+branch%3Amain
+
 A bitfield library for Rust.
 
 `mvbitfield` generates bitfield struct types that can insert and extract
@@ -17,7 +28,7 @@ The generated bitfield structs are:
 
 ## Demo
 
-```
+```rust
 // Recommended, but not required. The mvbitfield prelude includes the bitint
 // prelude.
 use mvbitfield::prelude::*;
