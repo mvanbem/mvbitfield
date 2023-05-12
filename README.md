@@ -17,7 +17,7 @@ The generated bitfield structs are:
 
 ## Demo
 
-```
+```rust
 // Recommended, but not required. The mvbitfield prelude includes the bitint
 // prelude.
 use mvbitfield::prelude::*;
