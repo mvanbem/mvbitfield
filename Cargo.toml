@@ -2,7 +2,7 @@
 members = ["mvbitfield", "mvbitfield-macros"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Michael VanBemmel <mvanbem@mvanbem.net>"]
 edition = "2021"
 repository = "https://github.com/mvanbem/mvbitfield"
@@ -10,7 +10,7 @@ license = "MIT"
 
 [workspace.dependencies]
 bitint = "0.1"
-mvbitfield = { path = "mvbitfield", version = "0.1" }
+mvbitfield = { path = "mvbitfield", version = "0.1.1" }
 mvbitfield-macros = { path = "mvbitfield-macros", version = "0.1" }
 proc-macro2 = "1"
 quote = "1"
