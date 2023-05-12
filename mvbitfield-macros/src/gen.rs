@@ -241,18 +241,18 @@ fn generate_struct_impl(
             /// Returns the type's zero value.
             ///
             /// This method is a `const` variant of
-            /// [`BitfieldStruct::zero`](::mvbitfield::BitfieldStruct::zero).
+            /// [`Bitfield::zero`](::mvbitfield::Bitfield::zero).
             #[inline(always)]
             #[must_use]
             pub const fn zero() -> Self {
                 Self::ZERO
             }
 
-            /// Creates a bitfield struct value from a primitive value if it is
-            /// in range for the `bitint` type.
+            /// Creates a bitfield value from a primitive value if it is in
+            /// range for the `bitint` type.
             ///
             /// This method is a `const` variant of
-            /// [`BitfieldStruct::new`](::mvbitfield::BitfieldStruct::new).
+            /// [`Bitfield::new`](::mvbitfield::Bitfield::new).
             #[inline(always)]
             #[must_use]
             pub const fn new(value: #struct_primitive_type) -> Option<Self> {
@@ -262,22 +262,22 @@ fn generate_struct_impl(
                 }
             }
 
-            /// Creates a bitfield struct value by masking off the upper bits of
-            /// a primitive value.
+            /// Creates a bitfield value by masking off the upper bits of a
+            /// primitive value.
             ///
             /// This method is a `const` variant of
-            /// [`BitfieldStruct::new_masked`](::mvbitfield::BitfieldStruct::new_masked).
+            /// [`Bitfield::new_masked`](::mvbitfield::Bitfield::new_masked).
             #[inline(always)]
             #[must_use]
             pub const fn new_masked(value: #struct_primitive_type) -> Self {
                 Self::from_bitint(#struct_bitint_type::new_masked(value))
             }
 
-            /// Creates a bitfield struct value from a primitive value without
-            /// checking whether it is in range for the `bitint` type.
+            /// Creates a bitfield value from a primitive value without checking
+            /// whether it is in range for the `bitint` type.
             ///
             /// This method is a `const` variant of
-            /// [`BitfieldStruct::new_unchecked`](::mvbitfield::BitfieldStruct::new_unchecked).
+            /// [`Bitfield::new_unchecked`](::mvbitfield::Bitfield::new_unchecked).
             ///
             /// # Safety
             ///
@@ -289,7 +289,7 @@ fn generate_struct_impl(
                 Self::from_bitint(#struct_bitint_type::new_unchecked(value))
             }
 
-            /// Creates a bitfield struct value from a `bitint` value.
+            /// Creates a bitfield value from a `bitint` value.
             ///
             /// This is a zero-cost conversion.
             #[inline(always)]
@@ -348,7 +348,7 @@ fn generate_struct_impl(
             }
         }
 
-        impl #crate_path::BitfieldStruct for #name {
+        impl #crate_path::Bitfield for #name {
             type Bitint = #struct_bitint_type;
 
             type Primitive = #struct_primitive_type;
@@ -450,7 +450,7 @@ fn generate_accessors(
                 let struct_value = self.to_primitive();
                 let new_value = (struct_value & !#offset_mask) | (field << #shift);
                 // SAFETY: Both operands have only in-range bits set, so the result will, too.
-                unsafe { #crate_path::BitfieldStruct::new_unchecked(new_value) }
+                unsafe { #crate_path::Bitfield::new_unchecked(new_value) }
             }
         }
     };
@@ -552,8 +552,14 @@ fn generate_enum_impl(
     visibility: Visibility,
     input: ast::Enum,
 ) -> Result<TokenStream> {
-    let name = input.name;
+    let name = &input.name;
     let enum_width = input.width.base10_parse()?;
+    if enum_width > 10 {
+        return Err(Error::new(
+            input.width.span(),
+            "bitfield enums may be at most 10 bits wide",
+        ));
+    }
     let BitintTypeInfo {
         primitive_type: enum_primitive_type,
         bitint_type: enum_bitint_type,
@@ -564,74 +570,59 @@ fn generate_enum_impl(
     // Gather declared variants.
     let mut variants_by_discriminant = BTreeMap::new();
     let mut next_discriminant: usize = 0;
-    let mut dot_dot_span = None;
-    for variant in input.variants {
-        match variant {
-            ast::Variant::Regular { name, discriminant } => {
-                if let Some(dot_dot_span) = dot_dot_span {
+    for variant in input.variants() {
+        let name = &variant.name;
+        match &variant.discriminant {
+            Some(ast::Discriminant { literal, .. }) => {
+                next_discriminant = literal.base10_parse()?;
+                if next_discriminant > max {
                     return Err(Error::new(
-                        dot_dot_span,
-                        "regular variants may not follow a `..` variant",
+                        name.span().join(literal.span()).unwrap_or(literal.span()),
+                        format!("discriminant out of range for U{enum_width}"),
                     ));
                 }
-
-                match discriminant {
-                    Some(ast::Discriminant { literal, .. }) => {
-                        next_discriminant = literal.base10_parse()?;
-                        if next_discriminant > max {
-                            return Err(Error::new(
-                                name.span().join(literal.span()).unwrap_or(literal.span()),
-                                format!("discriminant out of range for U{enum_width}"),
-                            ));
-                        }
-                    }
-                    None => {
-                        if next_discriminant > max {
-                            return Err(Error::new(
-                                name.span(),
-                                format!("discriminant out of range for U{enum_width}"),
-                            ));
-                        }
-                    }
-                }
-
-                let s = name.span();
-                let discriminant: Literal = {
-                    let mut literal = Literal::usize_unsuffixed(next_discriminant);
-                    literal.set_span(s);
-                    literal
-                };
-                variants_by_discriminant.insert(
-                    next_discriminant,
-                    quote_spanned!(s=> #name = #discriminant,),
-                );
-                next_discriminant += 1;
             }
-            ast::Variant::DotDot { dot_dot_token } => {
-                if dot_dot_span.is_some() {
+            None => {
+                if next_discriminant > max {
                     return Err(Error::new(
-                        dot_dot_token.span(),
-                        "only up to one `..` variant is permitted",
+                        name.span(),
+                        format!("discriminant out of range for U{enum_width}"),
                     ));
                 }
-                dot_dot_span = Some(dot_dot_token.span());
             }
         }
+
+        let s = name.span();
+        let attrs = &variant.attrs;
+        let discriminant: Literal = {
+            let mut literal = Literal::usize_unsuffixed(next_discriminant);
+            literal.set_span(s);
+            literal
+        };
+        variants_by_discriminant.insert(
+            next_discriminant,
+            quote_spanned!(s=> #(#attrs)* #name = #discriminant,),
+        );
+        next_discriminant += 1;
     }
 
     // Enforce that all discriminants are used.
-    if let Some(dot_dot_span) = dot_dot_span {
+    if let Some(dot_dot_token) = input.dot_dot_token() {
+        let s = dot_dot_token.span();
         for discriminant in 0..=max {
             variants_by_discriminant
                 .entry(discriminant)
                 .or_insert_with(|| {
-                    let variant = format_ident!("Unused{discriminant}", span = dot_dot_span);
+                    let variant = format_ident!("Unused{discriminant}", span = s);
                     let discriminant_literal: Literal = {
                         let mut literal = Literal::usize_unsuffixed(discriminant);
-                        literal.set_span(dot_dot_span);
+                        literal.set_span(s);
                         literal
                     };
-                    quote_spanned!(dot_dot_span=> #variant = #discriminant_literal)
+                    quote_spanned! {s=>
+                        #[doc = "An unused value."]
+                        #variant = #discriminant_literal,
+                    }
                 });
         }
     } else if variants_by_discriminant.len() != 1 << enum_width {
@@ -651,6 +642,9 @@ fn generate_enum_impl(
         }
 
         impl #name {
+            /// TODO
+            #[inline(always)]
+            #[must_use]
             pub fn new(value: #enum_primitive_type) -> Option<Self> {
                 match #enum_bitint_type::new(value) {
                     Some(value) => Some(Self::from_bitint(value)),
@@ -658,6 +652,21 @@ fn generate_enum_impl(
                 }
             }
 
+            /// TODO
+            #[inline(always)]
+            #[must_use]
+            pub fn new_masked(value: #enum_primitive_type) -> Self {
+                Self::from_bitint(#enum_bitint_type::new_masked(value))
+            }
+
+            /// TODO
+            #[inline(always)]
+            #[must_use]
+            pub unsafe fn new_unchecked(value: #enum_primitive_type) -> Self {
+                Self::from_bitint(#enum_bitint_type::new_unchecked(value))
+            }
+
+            /// TODO
             #[inline(always)]
             #[must_use]
             pub fn from_bitint(value: #enum_bitint_type) -> Self {
@@ -670,6 +679,7 @@ fn generate_enum_impl(
                 unsafe { ::core::mem::transmute(value.to_primitive()) }
             }
 
+            /// TODO
             #[inline(always)]
             #[must_use]
             pub fn to_bitint(self) -> #enum_bitint_type {
@@ -682,6 +692,7 @@ fn generate_enum_impl(
                 unsafe { ::core::mem::transmute(self) }
             }
 
+            /// TODO
             #[inline(always)]
             #[must_use]
             pub fn to_primitive(self) -> #enum_primitive_type {

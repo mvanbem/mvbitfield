@@ -78,6 +78,16 @@
 //! }
 //! ```
 //!
+//! # Associated types
+//!
+//! Bitfield types have two associated types: a `bitint` type and a primitive
+//! type. The `bitint` type is the bitfield type's canonical integer
+//! representation and is one of the 128 unsigned types from the [`mod@bitint`]
+//! crate. The primitive type is the `bitint` type's primitive type.
+//!
+//! The [`Bitfield::Bitint`], [`Bitfield::Primitive`], and
+//! [`UBitint::Primitive`] associated types model these relationships.
+//!
 //! # Bitfield structs
 //!
 //! Bitfield structs are declared with a sequence of fields, but unlike regular
@@ -103,16 +113,6 @@
 //! attribute](bitfield!#packing-order-attributes). If there is only one field,
 //! it must cover every bit and the packing order attribute is optional.
 //!
-//! ## Associated types
-//!
-//! Bitfield structs have two associated types: a `bitint` type and a primitive
-//! type. The `bitint` type is the bitfield struct's canonical integer
-//! representation and is one of the 128 unsigned types from the [`mod@bitint`]
-//! crate. The primitive type is the `bitint` type's primitive type.
-//!
-//! The [`BitfieldStruct::Bitint`], [`BitfieldStruct::Primitive`], and
-//! [`UBitint::Primitive`] associated types model these relationships.
-//!
 //! ## Layout
 //!
 //! A bitfield struct has the same layout as its `bitint` type. Bitfield structs
@@ -124,8 +124,7 @@
 //!
 //! ## Trait implementations
 //!
-//! Bitfield structs implement the [`BitfieldStruct`] trait and its
-//! requirements:
+//! Bitfield structs implement the [`Bitfield`] trait and its requirements:
 //!
 //! - [`Copy`] (and [`Clone`])
 //! - [`Debug`]
@@ -166,7 +165,7 @@
 //!
 //! ## Constructors and conversions
 //!
-//! Bitfield structs provide all of the [`BitfieldStruct`] trait methods and
+//! Bitfield structs provide all of the [`Bitfield`] trait methods and
 //! conversions to and from the `bitint` and primitive type as `const` inherent
 //! methods.
 //!
@@ -269,17 +268,17 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// Bitfield struct types.
+/// Bitfield struct and enum types.
 ///
-/// Bitfield structs have a [`mod@bitint`] type and a primitive type. The
-/// `bitint` type is the canonical integer representation. The primitive type is
-/// the `bitint` type's primitive type.
+/// Bitfield structs and enums have a [`mod@bitint`] type and a primitive type.
+/// The `bitint` type is the canonical integer representation. The primitive
+/// type is the `bitint` type's primitive type.
 ///
 /// There are zero-cost conversions between the `Self` and the `bitint` type,
 /// and from `Self` to the primitive type. There is a checked conversion from
 /// the primitive type to `Self`, though some implementors may separately
 /// provide a zero-cost conversion from the primitive type to `Self`.
-pub trait BitfieldStruct:
+pub trait Bitfield:
     Copy
     + Debug
     + Eq
@@ -289,7 +288,7 @@ pub trait BitfieldStruct:
     + Into<Self::Bitint>
     + Into<Self::Primitive>
 {
-    /// The bitfield struct's canonical integer representation.
+    /// The bitfield's canonical integer representation.
     type Bitint: UBitint<Primitive = Self::Primitive> + From<Self> + Into<Self>;
 
     /// The `bitint` type's primitive type.
@@ -305,18 +304,18 @@ pub trait BitfieldStruct:
         Self::ZERO
     }
 
-    /// Creates a bitfield struct value from a primitive value if it is in range
-    /// for the `bitint` type.
+    /// Creates a bitfield value from a primitive value if it is in range for
+    /// the `bitint` type.
     #[must_use]
     fn new(value: Self::Primitive) -> Option<Self>;
 
-    /// Creates a bitfield struct value by masking off the upper bits of a
+    /// Creates a bitfield value by masking off the upper bits of a
     /// primitive value.
     #[must_use]
     fn new_masked(value: Self::Primitive) -> Self;
 
-    /// Creates a bitfield struct value from a primitive value without checking
-    /// whether it is in range for the `bitint` type.
+    /// Creates a bitfield value from a primitive value without checking whether
+    /// it is in range for the `bitint` type.
     ///
     /// This is a zero-cost conversion.
     ///
@@ -328,7 +327,7 @@ pub trait BitfieldStruct:
     unsafe fn new_unchecked(value: Self::Primitive) -> Self;
 }
 
-/// Generates bitfield struct types.
+/// Generates bitfield types.
 ///
 /// This page uses [notation from The Rust
 /// Reference](https://doc.rust-lang.org/reference/notation.html) for syntax
@@ -339,13 +338,19 @@ pub trait BitfieldStruct:
 /// # Input
 ///
 /// A `bitfield!` macro invocation must receive one _Input_ declaring zero or
-/// more structs.
+/// more items, which may be structs or enums.
 ///
 /// > **Syntax**
 /// >
 /// > _Input_ :
 /// >
-/// > > _Struct_<sup>\*</sup>
+/// > > _Item_<sup>\*</sup>
+/// >
+/// > _Item_ :
+/// >
+/// > > _Struct_
+/// >
+/// > > | _Enum_
 ///
 /// ## Bitfield struct declarations
 ///
@@ -359,7 +364,7 @@ pub trait BitfieldStruct:
 /// >
 /// > _Fields_ :
 /// >
-/// > >  _Fields_ (`,` _Field_)<sup>\*</sup> `,`<sup>?</sup>
+/// > >  _Field_ (`,` _Field_)<sup>\*</sup> `,`<sup>?</sup>
 ///
 /// **Properties**
 ///
@@ -548,9 +553,139 @@ pub trait BitfieldStruct:
 /// > A public 4-bit field with `MyAccessor` accessors. The `MyAccessor` type is
 /// > another bitfield struct in this example, but could be any other type
 /// > having `impl From<U4> for MyAccessor` and `impl From<MyAccessor> for U4`.
+///
+/// ## Bitfield enum declarations
+///
+/// **Syntax**
+///
+/// > _Enum_ :
 /// >
-/// > \
+/// > > [_OuterAttribute_][RefAttr]<sup>\*</sup>
+/// > > [_Visibility_][RefVis]<sup>?</sup> `enum` [IDENTIFIER][RefIdent] `:`
+/// > > [INTEGER_LITERAL][RefLitInt] `{` _EnumElements_<sup>?</sup> `}`
 /// >
+/// > _EnumElements_ :
+/// >
+/// > > _Variants_ (`,` | `,` `..`)<sup>?</sup>
+/// >
+/// > > | `..`
+/// >
+/// > _Variants_ :
+/// >
+/// > > _Variant_ (`,` _Variant_)<sup>\*</sup>
+///
+/// **Properties**
+///
+/// > Attributes
+/// >
+/// > * Applied to the generated type.
+/// >
+/// > Visibility
+/// >
+/// > * Applied to the generated type.
+/// >
+/// > Name
+/// >
+/// > * Names the generated type.
+/// >
+/// > Width
+/// >
+/// > * The bit width for discriminants. Determines the bitfield enum's `bitint`
+/// >   and primitive types.
+/// >
+/// > Variants
+/// >
+/// > * Zero or more [bitfield enum variants](#bitfield-enum-variants).
+/// >
+/// > `..`
+/// >
+/// > * If present, any unused discriminants will produce placeholder variants
+/// >   instead of causing a compile error.
+///
+/// **Example**
+///
+/// > ```
+/// > # use mvbitfield::prelude::*;
+/// > bitfield! {
+/// >     pub enum MyEnum: 3 { .. }
+/// > }
+/// > ```
+/// >
+/// > This bitfield enum is three bits wide, so its bitint type is
+/// > [`U3`](bitint::U3) and its primitive type is [`u8`].
+///
+/// ## Bitfield enum variants
+///
+/// Each variant declaration allocates a name and a discriminant.
+///
+/// **Syntax**
+///
+/// > _Variant_ :
+/// >
+/// > > [_OuterAttribute_][RefAttr]<sup>\*</sup> [IDENTIFIER][RefIdent] (`=`
+/// > > [INTEGER_LITERAL][RefLitInt] )<sup>?</sup>
+/// >
+/// > > | `..`
+///
+/// **Properties**
+///
+/// > Attributes
+/// >
+/// > * Currently reserved: Specifying a field attribute causes a compile error.
+/// > * Omitted in the `..` form.
+/// >
+/// > Visibility
+/// >
+/// > * Applied to any accessor methods. May be any Rust visibility specifier.
+/// > * Private in the `..` form.
+/// >
+/// > Name
+/// >
+/// > * If starting with `_`, this field has no accessor methods.
+/// > * `_` in the `..` form.
+/// > * Otherwise, this is the name prefix for accessor methods. May be any Rust
+/// >   identifier, though some names may cause conflicts in the generated code,
+/// >   causing a compile error.
+/// >
+/// > Width
+/// >
+/// > * Determines the `bitint` type. May be specified with an integer literal
+/// >   or left flexible with `_`.
+/// > * Flexible in the `..` form.
+/// > * A bitfield struct may have up to one flexible field, which is sized to
+/// >   occupy all of the one or more bits unused by other fields.
+/// >
+/// > Accessor type
+/// >
+/// > * Defaults to the field's `bitint` type if unspecified or in the `..`
+/// >   form.
+/// > * Appears in accessor method signatures.
+/// > * Must have [`Into`] conversions to and from the field's `bitint` type,
+/// >   assumed to be zero-cost.
+/// >
+/// >   Suitable types include:
+/// >
+/// >     * `bool` for 1-bit fields.
+/// >     * Unsigned primitive integer types of the field's width.
+/// >     * Unsigned `bitint` types of the field's width.
+/// >     * Bitfield struct types of the field's width.
+/// >     * And any user-defined types that meet that condition.
+///
+/// **Examples**
+///
+/// > ```
+/// > # use mvbitfield::prelude::*;
+/// > bitfield! {
+/// >     #[lsb_first]
+/// >     pub struct MyStruct: 10 {
+/// >         pub my_bitint_field_a: 5,
+/// >         pub my_bitint_field_b: 5 as U5
+/// >     }
+/// > }
+/// > ```
+/// >
+/// > Public 5-bit fields with [`bitint::U5`] accessors.
+///
 /// [RefAttr]: https://doc.rust-lang.org/reference/attributes.html
 /// [RefIdent]: https://doc.rust-lang.org/reference/identifiers.html
 /// [RefLitInt]:

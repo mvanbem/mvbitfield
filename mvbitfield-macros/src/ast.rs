@@ -1,4 +1,7 @@
+use std::iter::{empty, once};
+
 use proc_macro2::Span;
+use syn::parse::discouraged::Speculative;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -238,7 +241,26 @@ pub struct Enum {
     _colon_token: Token![:],
     pub width: LitInt,
     _brace_token: token::Brace,
-    pub variants: Punctuated<Variant, Token![,]>,
+    pub elements: Option<EnumElements>,
+}
+
+impl Enum {
+    pub fn variants(&self) -> Box<dyn Iterator<Item = &Variant> + '_> {
+        match &self.elements {
+            Some(EnumElements::Variants { variants, .. }) => Box::new(
+                once(&variants.first).chain(variants.rest.iter().map(|(_comma, variant)| variant)),
+            ),
+            _ => Box::new(empty()),
+        }
+    }
+
+    pub fn dot_dot_token(&self) -> Option<&Token![..]> {
+        match &self.elements {
+            Some(EnumElements::Variants { dot_dot_token, .. }) => dot_dot_token.as_ref(),
+            Some(EnumElements::DotDot { dot_dot_token }) => Some(dot_dot_token),
+            None => None,
+        }
+    }
 }
 
 impl Parse for Enum {
@@ -250,42 +272,103 @@ impl Parse for Enum {
             _colon_token: input.parse()?,
             width: input.parse()?,
             _brace_token: braced!(body in input),
-            variants: body.parse_terminated(Variant::parse, Token![,])?,
+            elements: if body.is_empty() {
+                None
+            } else {
+                let elements = body.parse()?;
+                if !body.is_empty() {
+                    panic!("unexpected trailing tokens. is this possible?");
+                }
+                Some(elements)
+            },
         })
     }
 }
 
-pub enum Variant {
-    Regular {
-        name: Ident,
-        discriminant: Option<Discriminant>,
+pub enum EnumElements {
+    Variants {
+        variants: Variants,
+        _trailing_comma: Option<Token![,]>,
+        dot_dot_token: Option<Token![..]>,
     },
     DotDot {
         dot_dot_token: Token![..],
     },
 }
 
-impl Parse for Variant {
+impl Parse for EnumElements {
     fn parse(input: ParseStream) -> Result<Self> {
-        let lookahead = input.lookahead1();
-        if lookahead.peek(Ident) {
-            Ok(Self::Regular {
-                name: input.parse()?,
-                discriminant: {
-                    if input.peek(Token![=]) {
-                        Some(input.parse()?)
-                    } else {
-                        None
-                    }
-                },
-            })
-        } else if lookahead.peek(Token![..]) {
+        if input.peek(Token![..]) {
             Ok(Self::DotDot {
                 dot_dot_token: input.parse()?,
             })
         } else {
-            Err(lookahead.error())
+            let variants = input.parse()?;
+            let mut _trailing_comma = None;
+            let mut dot_dot_token = None;
+            if input.peek(Token![,]) {
+                _trailing_comma = Some(input.parse()?);
+                if input.peek(Token![..]) {
+                    dot_dot_token = Some(input.parse()?);
+                }
+            }
+            Ok(Self::Variants {
+                variants,
+                _trailing_comma,
+                dot_dot_token,
+            })
         }
+    }
+}
+
+pub struct Variants {
+    pub first: Variant,
+    pub rest: Vec<(Token![,], Variant)>,
+}
+
+impl Parse for Variants {
+    fn parse(input: ParseStream) -> Result<Self> {
+        fn parse_rest_element(input: ParseStream) -> Result<(Token![,], Variant)> {
+            Ok((input.parse()?, input.parse()?))
+        }
+
+        fn try_parse_rest_element(input: ParseStream) -> Option<(Token![,], Variant)> {
+            let fork = input.fork();
+            match parse_rest_element(&fork) {
+                Ok(pair) => {
+                    input.advance_to(&fork);
+                    Some(pair)
+                }
+                Err(_) => None,
+            }
+        }
+
+        Ok(Self {
+            first: input.parse()?,
+            rest: std::iter::from_fn(|| try_parse_rest_element(input)).collect(),
+        })
+    }
+}
+
+pub struct Variant {
+    pub attrs: Vec<Attribute>,
+    pub name: Ident,
+    pub discriminant: Option<Discriminant>,
+}
+
+impl Parse for Variant {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(Self {
+            attrs: input.call(Attribute::parse_outer)?,
+            name: input.parse()?,
+            discriminant: {
+                if input.peek(Token![=]) {
+                    Some(input.parse()?)
+                } else {
+                    None
+                }
+            },
+        })
     }
 }
 

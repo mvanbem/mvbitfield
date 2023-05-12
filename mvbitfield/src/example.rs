@@ -80,6 +80,60 @@ bitfield! {
         pub custom_primitive: 8 as CustomPrimitive8,
         ..
     }
+
+    /// A bitfield enum one bit wide.
+    ///
+    /// This type is convertible to and from [`U1`].
+    ///
+    /// # Declaration
+    ///
+    /// ```
+    /// # use mvbitfield::prelude::*;
+    /// bitfield! {
+    ///     pub enum BitfieldEnum1: 1 {
+    ///         /// Logical false.
+    ///         False,
+    ///         /// Logical true.
+    ///         True,
+    ///     }
+    /// }
+    /// ```
+    pub enum BitfieldEnum1: 1 {
+        /// Logical false.
+        False,
+        /// Logical true.
+        True,
+    }
+
+    /// A bitfield enum three bits wide.
+    ///
+    /// This type is convertible to and from [`U3`].
+    ///
+    /// # Declaration
+    ///
+    /// ```
+    /// # use mvbitfield::prelude::*;
+    /// bitfield! {
+    ///     pub enum BitfieldEnum3: 3 {
+    ///         /// The value `2`.
+    ///         Two = 2,
+    ///         /// The value `7`.
+    ///         Seven = 7,
+    ///         /// The value `5`.
+    ///         Five = 5,
+    ///         ..
+    ///     }
+    /// }
+    /// ```
+    pub enum BitfieldEnum3: 3 {
+        /// The value `2`.
+        Two = 2,
+        /// The value `7`.
+        Seven = 7,
+        /// The value `5`.
+        Five = 5,
+        ..
+    }
 }
 
 /// A custom bitfield accessor that wraps a [`U3`] `bitint`.

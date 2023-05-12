@@ -1,0 +1,17 @@
+error: bitfield enums may be at most 10 bits wide
+ --> tests_error/enum_too_wide.rs:6:23
+  |
+6 |     pub enum TooWide: 11 { .. }
+  |                       ^^
+
+error: bitfield enums may be at most 10 bits wide
+ --> tests_error/enum_too_wide.rs:8:26
+  |
+8 |     pub enum FarTooWide: 128 { .. }
+  |                          ^^^
+
+error: bitfield enums may be at most 10 bits wide
+  --> tests_error/enum_too_wide.rs:10:38
+   |
+10 |     pub enum CatastrphicallyTooWide: 1048576 { .. }
+   |                                      ^^^^^^^
