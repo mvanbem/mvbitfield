@@ -5,7 +5,7 @@ use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
 use syn::{Attribute, Error, Path, Result, Visibility};
 
-use crate::ast::{self, FieldAccessorType, Input};
+use crate::ast::{self, Accessor, Input};
 use crate::pack::{pack, PackDir, PackedField};
 
 struct Config {
@@ -20,15 +20,15 @@ struct BitintTypeInfo {
 }
 
 impl BitintTypeInfo {
-    fn with_accessor_type(self, accessor_type: FieldAccessorType) -> AccessorTypeInfo {
-        match accessor_type {
-            FieldAccessorType::Overridden { as_token, type_ } => AccessorTypeInfo {
+    fn with_accessor(self, accessor: Accessor) -> AccessorTypeInfo {
+        match accessor {
+            Accessor::Overridden { as_token, type_ } => AccessorTypeInfo {
                 error_span: as_token.span().join(type_.span()).unwrap_or(type_.span()),
                 accessor_type: type_.into_token_stream(),
                 bitint_type: self.bitint_type,
                 primitive_type: self.primitive_type,
             },
-            FieldAccessorType::Default => AccessorTypeInfo {
+            Accessor::Default => AccessorTypeInfo {
                 error_span: self.bitint_type.span(),
                 accessor_type: self.bitint_type.clone(),
                 bitint_type: self.bitint_type,
@@ -395,7 +395,7 @@ fn generate_accessors(
         primitive_type: accessor_primitive_type,
     } = cfg
         .type_info_for_width(field.width, field.width_span)?
-        .with_accessor_type(field.field.accessor_type());
+        .with_accessor(field.field.accessor());
 
     let shift = Literal::usize_unsuffixed(field.offset);
     let offset_mask = {

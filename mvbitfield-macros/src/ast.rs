@@ -98,7 +98,7 @@ enum FieldKind {
         name: FieldName,
         _colon_token: Token![:],
         width: FieldWidth,
-        accessor_type: FieldAccessorType,
+        accessor: Accessor,
     },
     DotDot {
         dot_dot_token: Token![..],
@@ -146,10 +146,13 @@ impl Field {
         }
     }
 
-    pub fn accessor_type(&self) -> FieldAccessorType {
+    pub fn accessor(&self) -> Accessor {
         match &self.kind {
-            FieldKind::Regular { accessor_type, .. } => accessor_type.clone(),
-            FieldKind::DotDot { .. } => FieldAccessorType::Default,
+            FieldKind::Regular {
+                accessor: accessor_type,
+                ..
+            } => accessor_type.clone(),
+            FieldKind::DotDot { .. } => Accessor::Default,
         }
     }
 }
@@ -170,7 +173,7 @@ impl Parse for Field {
                         name: input.parse()?,
                         _colon_token: input.parse()?,
                         width: input.parse()?,
-                        accessor_type: input.parse()?,
+                        accessor: input.parse()?,
                     })
                 } else {
                     Err(lookahead.error())
@@ -217,20 +220,20 @@ impl Parse for FieldWidth {
 }
 
 #[derive(Clone)]
-pub enum FieldAccessorType {
+pub enum Accessor {
     Overridden { as_token: Token![as], type_: Type },
     Default,
 }
 
-impl Parse for FieldAccessorType {
+impl Parse for Accessor {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(Token![as]) {
-            Ok(FieldAccessorType::Overridden {
+            Ok(Accessor::Overridden {
                 as_token: input.parse()?,
                 type_: input.parse()?,
             })
         } else {
-            Ok(FieldAccessorType::Default)
+            Ok(Accessor::Default)
         }
     }
 }
@@ -453,7 +456,7 @@ mod tests {
             kind: FieldKind::Regular {
                 name: FieldName::Ident(name),
                 width: FieldWidth::LitInt(width),
-                accessor_type: FieldAccessorType::Default,
+                accessor: Accessor::Default,
                 ..
             },
         } = syn::parse2(input).unwrap() else { panic!() };
@@ -471,8 +474,8 @@ mod tests {
             kind: FieldKind::Regular {
                 name: FieldName::Ident(name),
                 width: FieldWidth::LitInt(width),
-                accessor_type:
-                    FieldAccessorType::Overridden {
+                accessor:
+                    Accessor::Overridden {
                         type_: accessor_type,
                         ..
                     },
