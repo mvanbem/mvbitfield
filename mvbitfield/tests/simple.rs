@@ -1,15 +1,19 @@
 use mvbitfield::prelude::*;
 
 bitfield! {
+    /// This enum has a doc comment.
     pub enum MyEnum: 2 {
+        /// This variant has a doc comment.
         One = 1,
         Two,
         Three,
         Zero = 0,
     }
 
+    /// This struct has a doc comment.
     #[msb_first]
     pub struct MyStruct: 16 {
+        /// This field has a doc comment.
         pub high_bit: 1 as bool,
         pub next_two_bits: 2 as MyEnum,
         ..,

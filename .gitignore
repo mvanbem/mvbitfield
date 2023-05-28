@@ -1,4 +1,2 @@
 /Cargo.lock
-/target-nightly/
-/target-stable/
-/target/
+/target*/

@@ -493,7 +493,8 @@ pub trait Bitfield:
 ///
 /// > Attributes
 /// >
-/// > * Currently reserved: Specifying a field attribute causes a compile error.
+/// > * Any `doc` attributes are appended to documentation for accessor methods.
+/// > * All other attributes are reserved and will cause a compile error.
 /// > * Omitted in the `..` form.
 /// >
 /// > Visibility
@@ -540,6 +541,7 @@ pub trait Bitfield:
 /// > bitfield! {
 /// >     #[lsb_first]
 /// >     pub struct MyStruct: 10 {
+/// >         /// Doc comments are permitted.
 /// >         pub my_bitint_field_a: 5,
 /// >         pub my_bitint_field_b: 5 as U5
 /// >     }
@@ -575,13 +577,14 @@ pub trait Bitfield:
 /// > ```
 /// >
 /// > `MyAccessor` is a bitfield struct with one private 4-bit field and no
-/// > accessors. The field is declared with a flexible width and resolved to
-/// > four bits at macro processing time to fill its bitfield struct. The field
+/// > accessors. The field is declared with a flexible width, resolved to four
+/// > bits at macro processing time to fill its bitfield struct. The field
 /// > declarations `_: _` and `..` are equivalent.
 /// >
-/// > A public 4-bit field with `MyAccessor` accessors. The `MyAccessor` type is
-/// > another bitfield struct in this example, but could be any other type
-/// > having `impl From<U4> for MyAccessor` and `impl From<MyAccessor> for U4`.
+/// > `MyStruct` has a public 4-bit field with `MyAccessor` accessors. The
+/// > `MyAccessor` type is another bitfield struct in this example, but could be
+/// > any other type having `impl Into<U4> for MyAccessor` and `impl
+/// > Into<MyAccessor> for U4`.
 ///
 /// ## Bitfield enum declarations
 ///
@@ -653,67 +656,76 @@ pub trait Bitfield:
 /// >
 /// > > [_OuterAttribute_][RefAttr]<sup>\*</sup> [IDENTIFIER][RefIdent] (`=`
 /// > > [INTEGER_LITERAL][RefLitInt] )<sup>?</sup>
-/// >
-/// > > | `..`
 ///
 /// **Properties**
 ///
 /// > Attributes
 /// >
-/// > * Currently reserved: Specifying a field attribute causes a compile error.
-/// > * Omitted in the `..` form.
-/// >
-/// > Visibility
-/// >
-/// > * Applied to any accessor methods. May be any Rust visibility specifier.
-/// > * Private in the `..` form.
+/// > * Applied to the generated variant.
 /// >
 /// > Name
 /// >
-/// > * If starting with `_`, this field has no accessor methods.
-/// > * `_` in the `..` form.
-/// > * Otherwise, this is the name prefix for accessor methods. May be any Rust
-/// >   identifier, though some names may cause conflicts in the generated code,
-/// >   causing a compile error.
+/// > * Names the variant.
 /// >
-/// > Width
+/// > Discriminant
 /// >
-/// > * Determines the `bitint` type. May be specified with an integer literal
-/// >   or left flexible with `_`.
-/// > * Flexible in the `..` form.
-/// > * A bitfield struct may have up to one flexible field, which is sized to
-/// >   occupy all of the one or more bits unused by other fields.
-/// >
-/// > Accessor type
-/// >
-/// > * Defaults to the field's `bitint` type if unspecified or in the `..`
-/// >   form.
-/// > * Appears in accessor method signatures.
-/// > * Must have [`Into`] conversions to and from the field's `bitint` type,
-/// >   assumed to be zero-cost.
-/// >
-/// >   Suitable types include:
-/// >
-/// >     * `bool` for 1-bit fields.
-/// >     * Unsigned primitive integer types of the field's width.
-/// >     * Unsigned `bitint` types of the field's width.
-/// >     * Bitfield struct types of the field's width.
-/// >     * And any user-defined types that meet that condition.
+/// > * If present, determines the discriminant for this variant.
+/// > * If absent, the discriminant is zero for the first variant or the
+/// >   previous discriminant plus one for subsequent variants.
 ///
 /// **Examples**
 ///
 /// > ```
 /// > # use mvbitfield::prelude::*;
 /// > bitfield! {
-/// >     #[lsb_first]
-/// >     pub struct MyStruct: 10 {
-/// >         pub my_bitint_field_a: 5,
-/// >         pub my_bitint_field_b: 5 as U5
+/// >     pub enum MyEnum: 1 {
+/// >         /// Doc comments are permitted.
+/// >         X,
+/// >         Y,
 /// >     }
 /// > }
 /// > ```
 /// >
-/// > Public 5-bit fields with [`bitint::U5`] accessors.
+/// > Two variants:
+/// >
+/// > * `X` with discriminant `0_U1`
+/// > * `Y` with discriminant `1_U1`
+///
+/// > ```
+/// > # use mvbitfield::prelude::*;
+/// > bitfield! {
+/// >     pub enum MyEnum: 2 {
+/// >         Y = 1,
+/// >         Z,
+/// >         W,
+/// >         X = 0,
+/// >     }
+/// > }
+/// > ```
+/// >
+/// > Four variants:
+/// >
+/// > * `X` with discriminant `0_U2`
+/// > * `Y` with discriminant `1_U2`
+/// > * `Z` with discriminant `2_U2`
+/// > * `W` with discriminant `3_U2`
+///
+/// > ```
+/// > # use mvbitfield::prelude::*;
+/// > bitfield! {
+/// >     pub enum MyEnum: 2 {
+/// >         Y = 1,
+/// >         ..
+/// >     }
+/// > }
+/// > ```
+/// >
+/// > Four variants:
+/// >
+/// > * `Unused0` with discriminant `0_U2`
+/// > * `Y` with discriminant `1_U2`
+/// > * `Unused2` with discriminant `2_U2`
+/// > * `Unused3` with discriminant `3_U2`
 ///
 /// [RefAttr]: https://doc.rust-lang.org/reference/attributes.html
 /// [RefIdent]: https://doc.rust-lang.org/reference/identifiers.html

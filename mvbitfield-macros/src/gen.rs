@@ -1,10 +1,11 @@
+use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
 use proc_macro2::{Literal, Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::spanned::Spanned;
-use syn::{Attribute, Error, Path, Result, Visibility};
+use syn::{parse_quote, Attribute, Error, Path, Result, Visibility};
 
 use crate::ast::{self, Accessor, Input};
 use crate::pack::{pack, PackDir, PackedField};
@@ -163,10 +164,25 @@ fn generate_struct_impl(
 
     let crate_path = &cfg.crate_path;
 
-    let doc = format!(
+    let mut doc = format!(
         "\n\nThis type is a generated bitfield struct. The `bitint` type is `{struct_bitint_name}` \
             and the primitive type is [`{struct_primitive_name}`].",
     );
+    if !input.fields.is_empty() {
+        doc.push_str("\n\n# Fields");
+    }
+    let mut field_doc_literals = Vec::new();
+    for field in &input.fields {
+        if field.name_to_string().starts_with('_') {
+            continue;
+        }
+
+        let msg = format!("\n\n## `{name}`\n\n", name = field.name_to_string(),);
+        field_doc_literals.push(parse_quote!(#msg));
+        for doc_literal in field.iter_doc_literals() {
+            field_doc_literals.push(doc_literal?.clone());
+        }
+    }
 
     let (from_primitive_method, from_primitive_impl) =
         if [8, 16, 32, 64, 128].contains(&struct_width) {
@@ -230,6 +246,7 @@ fn generate_struct_impl(
         #[repr(transparent)]
         #(#other_attrs)*
         #[doc = #doc]
+        #(#[doc = #field_doc_literals])*
         #visibility struct #name {
             value: #struct_bitint_type,
         }
@@ -379,6 +396,16 @@ fn generate_accessors(
     struct_primitive_type: &TokenStream,
     field: PackedField,
 ) -> Result<Option<TokenStream>> {
+    // Enforce attribute constraints.
+    let mut user_doc_literals = Vec::new();
+    for literal in field.field.iter_doc_literals() {
+        let literal = literal?;
+        if user_doc_literals.is_empty() {
+            user_doc_literals.push(Cow::Owned(parse_quote!("\n\n# Field\n\n")));
+        }
+        user_doc_literals.push(Cow::Borrowed(literal));
+    }
+
     // Reserved fields do not generate any code.
     let name = field.field.name_to_string();
     if name.starts_with('_') {
@@ -422,6 +449,7 @@ fn generate_accessors(
         let doc = format!("Extracts the `{}` field.", name);
         quote_spanned! {s=>
             #[doc = #doc]
+            #(#[doc = #user_doc_literals])*
             #[inline(always)]
             #[must_use]
             #visibility fn #get_method_name(self) -> #accessor_type {
@@ -437,6 +465,7 @@ fn generate_accessors(
         let doc = format!("Creates a new value with the given `{}` field.", name);
         quote_spanned! {s=>
             #[doc = #doc]
+            #(#[doc = #user_doc_literals])*
             #[inline(always)]
             #[must_use]
             #visibility fn #with_method_name(self, value: #accessor_type) -> Self {
@@ -463,6 +492,7 @@ fn generate_accessors(
         );
         quote! {
             #[doc = #doc]
+            #(#[doc = #user_doc_literals])*
             #[inline(always)]
             #[must_use]
             #visibility fn #map_method_name(
@@ -478,6 +508,7 @@ fn generate_accessors(
         let doc = format!("Sets the `{}` field.", name);
         quote! {
             #[doc = #doc]
+            #(#[doc = #user_doc_literals])*
             #[inline(always)]
             #visibility fn #set_method_name(&mut self, value: #accessor_type) {
                 *self = self.#with_method_name(value);
@@ -489,6 +520,7 @@ fn generate_accessors(
         let doc = format!("Replaces the `{}` field and returns the old value.", name,);
         quote! {
             #[doc = #doc]
+            #(#[doc = #user_doc_literals])*
             #[inline(always)]
             #visibility fn #replace_method_name(
                 &mut self,
@@ -508,6 +540,7 @@ fn generate_accessors(
         );
         quote! {
             #[doc = #doc]
+            #(#[doc = #user_doc_literals])*
             #[inline(always)]
             #visibility fn #update_method_name(
                 &mut self,
@@ -563,8 +596,9 @@ fn generate_enum_impl(
     }
     let BitintTypeInfo {
         primitive_type: enum_primitive_type,
+        primitive_name: enum_primitive_name,
         bitint_type: enum_bitint_type,
-        ..
+        bitint_name: enum_bitint_name,
     } = cfg.type_info_for_width(enum_width, input.width.span())?;
     let max: usize = (1 << enum_width) - 1;
 
@@ -659,11 +693,21 @@ fn generate_enum_impl(
     }
     let variants = Vec::from_iter(variants_by_discriminant.into_values());
 
+    let crate_path = &cfg.crate_path;
+
+    let doc = format!(
+        "\n\nThis type is a generated bitfield enum. The `bitint` type is `{enum_bitint_name}` and \
+            the primitive type is [`{enum_primitive_name}`].",
+    );
+
     let from_primitive_method;
     let from_primitive_impl;
     if enum_width == 8 {
         from_primitive_method = Some(quote! {
-            // TODO
+            /// Creates a bitfield enum value from a primitive value.
+            ///
+            /// This zero-cost conversion is a convenience alias for converting
+            /// through the `bitint` type.
             #[inline(always)]
             #[must_use]
             pub const fn from_primitive(value: #enum_primitive_type) -> Self {
@@ -700,12 +744,20 @@ fn generate_enum_impl(
         #[derive(Clone, Copy, Debug, Eq)]
         #[repr(#enum_primitive_type)]
         #(#attrs)*
+        #[doc = #doc]
         #visibility enum #name {
             #(#variants)*
         }
 
+        #[allow(dead_code)]
         impl #name {
-            /// TODO
+            /// The type's zero value.
+            pub const ZERO: Self = Self::from_bitint(#enum_bitint_type::ZERO);
+
+            /// Creates a bitfield value from a primitive value if it is in
+            /// range for the `bitint` type.
+            ///
+            /// This method is a `const` variant of [`Bitfield::new`].
             #[inline(always)]
             #[must_use]
             pub const fn new(value: #enum_primitive_type) -> Option<Self> {
@@ -715,21 +767,34 @@ fn generate_enum_impl(
                 }
             }
 
-            /// TODO
+            /// Creates a bitfield value by masking off the upper bits of a
+            /// primitive value.
+            ///
+            /// This method is a `const` variant of [`Bitfield::new_masked`].
             #[inline(always)]
             #[must_use]
             pub const fn new_masked(value: #enum_primitive_type) -> Self {
                 Self::from_bitint(#enum_bitint_type::new_masked(value))
             }
 
-            /// TODO
+            /// Creates a bitfield value from a primitive value without checking
+            /// whether it is in range for the `bitint` type.
+            ///
+            /// This method is a const variant of [`Bitfield::new_unchecked`].
+            ///
+            /// # Safety
+            ///
+            /// The value must be in range for the `bitint` type, as determined
+            /// by [`UBitint::is_in_range`].
             #[inline(always)]
             #[must_use]
             pub const unsafe fn new_unchecked(value: #enum_primitive_type) -> Self {
                 Self::from_bitint(#enum_bitint_type::new_unchecked(value))
             }
 
-            /// TODO
+            /// Creates a bitfield value from a `bitint` value.
+            ///
+            /// This is a zero-cost conversion.
             #[inline(always)]
             #[must_use]
             pub const fn from_bitint(value: #enum_bitint_type) -> Self {
@@ -744,7 +809,9 @@ fn generate_enum_impl(
 
             #from_primitive_method
 
-            /// TODO
+            /// Converts the value to a `bitint`.
+            ///
+            /// This is a zero-cost conversion.
             #[inline(always)]
             #[must_use]
             pub const fn to_bitint(self) -> #enum_bitint_type {
@@ -757,7 +824,13 @@ fn generate_enum_impl(
                 unsafe { ::core::mem::transmute(self) }
             }
 
-            /// TODO
+            /// Converts the value to the primitive type.
+            ///
+            /// The result is in range for the `bitint` type, as determined by
+            /// [`UBitint::is_in_range`].
+            ///
+            /// This zero-cost conversion is a convenience alias for converting
+            /// through the `bitint` type.
             #[inline(always)]
             #[must_use]
             pub const fn to_primitive(self) -> #enum_primitive_type {
@@ -793,5 +866,35 @@ fn generate_enum_impl(
         }
 
         #from_primitive_impl
+
+        impl ::core::convert::From<#name> for #enum_primitive_type {
+            #[inline(always)]
+            fn from(value: #name) -> Self {
+                value.to_primitive()
+            }
+        }
+
+        impl #crate_path::Bitfield for #name {
+            type Bitint = #enum_bitint_type;
+
+            type Primitive = #enum_primitive_type;
+
+            const ZERO: Self = Self::ZERO;
+
+            #[inline(always)]
+            fn new(value: #enum_primitive_type) -> Option<Self> {
+                Self::new(value)
+            }
+
+            #[inline(always)]
+            fn new_masked(value: #enum_primitive_type) -> Self {
+                Self::new_masked(value)
+            }
+
+            #[inline(always)]
+            unsafe fn new_unchecked(value: #enum_primitive_type) -> Self {
+                Self::new_unchecked(value)
+            }
+        }
     })
 }

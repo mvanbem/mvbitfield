@@ -6,7 +6,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    braced, parenthesized, token, Attribute, Ident, LitInt, Path, Result, Token, Type, Visibility,
+    braced, parenthesized, token, Attribute, Error, Expr, ExprLit, Ident, LitInt, Path, Result,
+    Token, Type, Visibility,
 };
 
 pub struct Input {
@@ -106,6 +107,19 @@ enum FieldKind {
 }
 
 impl Field {
+    pub fn iter_doc_literals(&self) -> impl Iterator<Item = Result<&ExprLit>> + '_ {
+        self.attrs.iter().map(|attr| match attr.path() {
+            path if path.is_ident("doc") => match attr.meta.require_name_value()?.value {
+                Expr::Lit(ref literal) => Ok(literal),
+                _ => Err(Error::new(attr.span(), "expected a literal value")),
+            },
+            _ => Err(Error::new(
+                attr.span(),
+                "forbidden attribute; only `doc` attributes are permitted",
+            )),
+        })
+    }
+
     pub fn name_to_string(&self) -> String {
         match &self.kind {
             FieldKind::Regular {
