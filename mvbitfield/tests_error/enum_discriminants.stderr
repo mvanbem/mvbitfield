@@ -1,41 +1,47 @@
-error: discriminant out of range for U2
+error: discriminant out of range for U4
  --> tests_error/enum_discriminants.rs:5:9
   |
-5 |         X = 4,
-  |         ^^^^^
+5 |         A = 16,
+  |         ^^^^^^
+
+error: discriminant out of range for U5
+  --> tests_error/enum_discriminants.rs:10:9
+   |
+10 |         B,
+   |         ^
 
 error: discriminant 0 used multiple times
-  --> tests_error/enum_discriminants.rs:11:9
+  --> tests_error/enum_discriminants.rs:16:9
    |
-11 |         X = 0,
+16 |         X = 0,
    |         ^
 
 error: unused discriminant(s): 1; consider specifying a `..` variant
-  --> tests_error/enum_discriminants.rs:14:14
+  --> tests_error/enum_discriminants.rs:19:14
    |
-14 |     pub enum MiddleGapWithoutPlaceholder: 2 {
+19 |     pub enum MiddleGapWithoutPlaceholder: 2 {
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: unused discriminant(s): 3; consider specifying a `..` variant
-  --> tests_error/enum_discriminants.rs:20:14
+  --> tests_error/enum_discriminants.rs:25:14
    |
-20 |     pub enum EndGapWithoutPlaceholder: 2 {
+25 |     pub enum EndGapWithoutPlaceholder: 2 {
    |              ^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: unused discriminant(s): 1, 2, 3; consider specifying a `..` variant
-  --> tests_error/enum_discriminants.rs:26:14
+  --> tests_error/enum_discriminants.rs:31:14
    |
-26 |     pub enum ThreeUnused: 2 {
+31 |     pub enum ThreeUnused: 2 {
    |              ^^^^^^^^^^^
 
 error: unused discriminant(s): 4, 5, 6, ..; consider specifying a `..` variant
-  --> tests_error/enum_discriminants.rs:30:14
+  --> tests_error/enum_discriminants.rs:35:14
    |
-30 |     pub enum FourUnused: 3 {
+35 |     pub enum FourUnused: 3 {
    |              ^^^^^^^^^^
 
 error: unused discriminant(s): 3, 4, 5, ..; consider specifying a `..` variant
-  --> tests_error/enum_discriminants.rs:37:14
+  --> tests_error/enum_discriminants.rs:42:14
    |
-37 |     pub enum FiveUnused: 3 {
+42 |     pub enum FiveUnused: 3 {
    |              ^^^^^^^^^^

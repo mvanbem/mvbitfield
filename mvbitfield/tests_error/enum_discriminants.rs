@@ -1,8 +1,13 @@
 use mvbitfield::prelude::*;
 
 bitfield! {
-    pub enum DiscriminantOutOfRange: 2 {
-        X = 4,
+    pub enum ExplicitOutOfRange: 4 {
+        A = 16,
+    }
+
+    pub enum ImplicitOutOfRange: 5 {
+        A = 31,
+        B,
     }
 
     pub enum RepeatedDiscriminant: 1 {
