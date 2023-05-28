@@ -1,3 +1,4 @@
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
 use proc_macro2::{Literal, Span, TokenStream};
@@ -599,10 +600,17 @@ fn generate_enum_impl(
             literal.set_span(s);
             literal
         };
-        variants_by_discriminant.insert(
-            next_discriminant,
-            quote_spanned!(s=> #(#attrs)* #name = #discriminant,),
-        );
+        match variants_by_discriminant.entry(next_discriminant) {
+            Entry::Vacant(entry) => {
+                entry.insert(quote_spanned!(s=> #(#attrs)* #name = #discriminant,));
+            }
+            Entry::Occupied(_) => {
+                return Err(Error::new(
+                    name.span(),
+                    format!("discriminant {next_discriminant} used multiple times"),
+                ))
+            }
+        }
         next_discriminant += 1;
     }
 
@@ -626,12 +634,67 @@ fn generate_enum_impl(
                 });
         }
     } else if variants_by_discriminant.len() != 1 << enum_width {
-        return Err(Error::new(
-            name.span(),
-            "unused discriminants; consider specifying a `..` variant",
-        ));
+        use std::fmt::Write;
+
+        // Build a descriptive error message that contains up to three example
+        // unused discriminants and indicates whether the list is complete.
+        let mut msg = "unused discriminant(s): ".to_string();
+        let mut example_count = 0;
+        for discriminant in 0..=max {
+            if !variants_by_discriminant.contains_key(&discriminant) {
+                if example_count > 0 {
+                    msg.push_str(", ");
+                }
+                if example_count < 3 {
+                    write!(&mut msg, "{}", discriminant).unwrap();
+                    example_count += 1;
+                } else {
+                    msg.push_str("..");
+                    break;
+                }
+            }
+        }
+        msg.push_str("; consider specifying a `..` variant");
+        return Err(Error::new(name.span(), msg));
     }
     let variants = Vec::from_iter(variants_by_discriminant.into_values());
+
+    let from_primitive_method;
+    let from_primitive_impl;
+    if enum_width == 8 {
+        from_primitive_method = Some(quote! {
+            // TODO
+            #[inline(always)]
+            #[must_use]
+            pub const fn from_primitive(value: #enum_primitive_type) -> Self {
+                Self::from_bitint(#enum_bitint_type::from_primitive(value))
+            }
+        });
+        from_primitive_impl = quote! {
+            impl ::core::convert::From<#enum_primitive_type> for #name {
+                #[inline(always)]
+                fn from(value: #enum_primitive_type) -> Self {
+                    Self::from_primitive(value)
+                }
+            }
+        };
+    } else {
+        from_primitive_method = None;
+        from_primitive_impl = quote! {
+            impl ::core::convert::TryFrom<#enum_primitive_type> for #name {
+                type Error = <
+                    #enum_bitint_type as ::core::convert::TryFrom<#enum_primitive_type>
+                >::Error;
+
+                #[inline(always)]
+                fn try_from(value: #enum_primitive_type) -> Result<Self, Self::Error> {
+                    <
+                        #enum_bitint_type as ::core::convert::TryFrom<#enum_primitive_type>
+                    >::try_from(value).map(Self::from_bitint)
+                }
+            }
+        }
+    };
 
     Ok(quote! {
         #[derive(Clone, Copy, Debug, Eq)]
@@ -645,7 +708,7 @@ fn generate_enum_impl(
             /// TODO
             #[inline(always)]
             #[must_use]
-            pub fn new(value: #enum_primitive_type) -> Option<Self> {
+            pub const fn new(value: #enum_primitive_type) -> Option<Self> {
                 match #enum_bitint_type::new(value) {
                     Some(value) => Some(Self::from_bitint(value)),
                     None => None,
@@ -655,21 +718,21 @@ fn generate_enum_impl(
             /// TODO
             #[inline(always)]
             #[must_use]
-            pub fn new_masked(value: #enum_primitive_type) -> Self {
+            pub const fn new_masked(value: #enum_primitive_type) -> Self {
                 Self::from_bitint(#enum_bitint_type::new_masked(value))
             }
 
             /// TODO
             #[inline(always)]
             #[must_use]
-            pub unsafe fn new_unchecked(value: #enum_primitive_type) -> Self {
+            pub const unsafe fn new_unchecked(value: #enum_primitive_type) -> Self {
                 Self::from_bitint(#enum_bitint_type::new_unchecked(value))
             }
 
             /// TODO
             #[inline(always)]
             #[must_use]
-            pub fn from_bitint(value: #enum_bitint_type) -> Self {
+            pub const fn from_bitint(value: #enum_bitint_type) -> Self {
                 // SAFETY: Self is a field-less enum with a primitive
                 // representation, so its layout is the same as the
                 // discriminant.
@@ -679,10 +742,12 @@ fn generate_enum_impl(
                 unsafe { ::core::mem::transmute(value.to_primitive()) }
             }
 
+            #from_primitive_method
+
             /// TODO
             #[inline(always)]
             #[must_use]
-            pub fn to_bitint(self) -> #enum_bitint_type {
+            pub const fn to_bitint(self) -> #enum_bitint_type {
                 // SAFETY: Self is a field-less enum with a primitive
                 // representation, so its layout is the same as the
                 // discriminant.
@@ -695,7 +760,7 @@ fn generate_enum_impl(
             /// TODO
             #[inline(always)]
             #[must_use]
-            pub fn to_primitive(self) -> #enum_primitive_type {
+            pub const fn to_primitive(self) -> #enum_primitive_type {
                 self.to_bitint().to_primitive()
             }
         }
@@ -726,5 +791,7 @@ fn generate_enum_impl(
                 value.to_bitint()
             }
         }
+
+        #from_primitive_impl
     })
 }

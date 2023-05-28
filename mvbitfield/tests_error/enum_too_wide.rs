@@ -7,7 +7,7 @@ bitfield! {
 
     pub enum FarTooWide: 128 { .. }
 
-    pub enum CatastrphicallyTooWide: 1048576 { .. }
+    pub enum CatastrophicallyTooWide: 1048576 { .. }
 }
 
 fn main() {}
