@@ -130,7 +130,7 @@
 //! [`BitfieldStruct32`](example::BitfieldStruct32) for [`bitfield!`]
 //! invocations and the resulting generated types.
 //!
-//! ## Packing
+//! ## Bitfield struct packing
 //!
 //! Fields occupy contiguous ranges of bits and are tightly packed in
 //! declaration order. Each bit must be covered by precisely one field. The `..`
@@ -142,7 +142,7 @@
 //! attribute](bitfield!#packing-order-attributes). If there is only one field,
 //! it must cover every bit and the packing order attribute is optional.
 //!
-//! ## Layout
+//! ## Bitfield struct layout
 //!
 //! A bitfield struct has the same layout as its `bitint` type. Bitfield structs
 //! of widths 8, 16, 32, 64, or 128 are particularly well suited for
@@ -151,7 +151,7 @@
 //! widths require more care in unsafe contexts because their `bitint` types
 //! have unused upper bits that must remain clear.
 //!
-//! ## Trait implementations
+//! ## Bitfield struct trait implementations
 //!
 //! Bitfield structs implement the [`Bitfield`] trait and its requirements:
 //!
@@ -192,7 +192,7 @@
 //! assert!(MyStruct::zero() < MyStruct::zero().with_high_bit(true));
 //! ```
 //!
-//! ## Constructors and conversions
+//! ## Bitfield struct constructors and conversions
 //!
 //! Bitfield structs provide all of the [`Bitfield`] trait methods and
 //! conversions to and from the `bitint` and primitive type as `const` inherent
@@ -200,72 +200,116 @@
 //!
 //! ```ignore
 //! impl MyBitfieldStruct {
-//!     const fn zero() -> Self;
+//!     pub const ZERO: Self;
 //!
-//!     const fn new(value: Self::Primitive) -> Option<Self>;
+//!     pub const fn zero() -> Self;
 //!
-//!     const fn new_masked(value: Self::Primitive) -> Self;
+//!     pub const fn new(value: Self::Primitive) -> Option<Self>;
 //!
-//!     const unsafe fn new_unchecked(value: Self::Primitive) -> Self;
+//!     pub const fn new_masked(value: Self::Primitive) -> Self;
 //!
-//!     const fn from_bitint(value: Self::Bitint) -> Self;
+//!     pub const unsafe fn new_unchecked(value: Self::Primitive) -> Self;
+//!
+//!     pub const fn from_bitint(value: Self::Bitint) -> Self;
 //!
 //!     // Only for primitive widths.
-//!     const fn from_primitive(value: Self::Primitive) -> Self;
+//!     pub const fn from_primitive(value: Self::Primitive) -> Self;
 //!
-//!     const fn to_bitint(self) -> Self::Bitint;
+//!     pub const fn to_bitint(self) -> Self::Bitint;
 //!
-//!     const fn to_primitive(self) -> Self::Primitive;
+//!     pub const fn to_primitive(self) -> Self::Primitive;
 //! }
 //! ```
+//!
+//! See the rustdoc on any generated bitfield struct type for details on
+//! behavior, invariants, cost, and safety.
 //!
 //! ## Field accessors
 //!
 //! ```ignore
 //! impl MyBitfieldStruct {
-//!     fn my_field(self) -> T;
+//!     pub fn my_field(self) -> T;
 //!
-//!     fn with_my_field(self, value: T) -> Self;
+//!     pub fn with_my_field(self, value: T) -> Self;
 //!
-//!     fn map_my_field(self, f: impl FnOnce(T) -> T) -> Self;
+//!     pub fn map_my_field(self, f: impl FnOnce(T) -> T) -> Self;
 //!
-//!     fn set_my_field(&mut self, value: T);
+//!     pub fn set_my_field(&mut self, value: T);
 //!
-//!     fn replace_my_field(&mut self, value: T) -> T;
+//!     pub fn replace_my_field(&mut self, value: T) -> T;
 //!
-//!     fn update_my_field(&mut self, f: impl FnOnce(T) -> T) -> T;
+//!     pub fn update_my_field(&mut self, f: impl FnOnce(T) -> T) -> T;
 //! }
 //! ```
 //!
 //! where `my_field` is the field name and `T` is the field accessor type.
 //!
+//! Note that field accessor methods are not `const` because they rely on
+//! [`Into`] conversions (plus [`FnOnce`] invocations for `map` and `update`),
+//! which cannot be `const` as of Rust 1.69.
+//!
 //! # Bitfield enums
 //!
-//! ```
-//! # use mvbitfield::prelude::*;
-//! bitfield! {
-//!     pub enum RenderMode: 3 {
-//!         PointList,
-//!         LineList,
-//!         LineStrip,
-//!         TriangleList,
-//!         TriangleStrip,
-//!         TriangleFan,
-//!         QuadList,
-//!         ..
-//!     }
-//! }
+//! Bitfield enums are unit-only/fieldless Rust enums that have a declared bit
+//! width and corresponding `bitint` type. A bitfield enum with width _n_ has
+//! precisely _2ⁿ_ variants, one for each of the `bitint` type's valid primitive
+//! values. This allows for sound zero-cost conversions to and from the `bitint`
+//! type.
 //!
-//! #[bitint_literals]
-//! fn main() {
-//!     assert_eq!(RenderMode::from_bitint(4_U3), RenderMode::TriangleStrip);
-//!     assert_eq!(RenderMode::TriangleStrip.to_bitint(), 4_U3);
-//!     assert_eq!(RenderMode::TriangleStrip.to_primitive(), 4);
+//! A maximum width is currently enforced at 10 bits to keep compile times and
+//! memory usage reasonable.
 //!
-//!     // Variants are generated for each unused discriminant.
-//!     assert_eq!(RenderMode::from_bitint(7_U3), RenderMode::Unused7);
+//! **Examples**
+//!
+//! See [`BitfieldEnum1`](example::BitfieldEnum1) and
+//! [`BitfieldEnum3`](example::BitfieldEnum3) for practical [`bitfield!`]
+//! invocations and the resulting generated types. See
+//! [`BitfieldEnum8`](example::BitfieldEnum8) for a perhaps impractically large
+//! bitfield enum that has primitive width, allowing an additional zero-cost
+//! [`from_primitive`](example::BitfieldEnum8::from_primitive) method and
+//! `From<u8>` impl in place of `TryFrom<u8>`.
+//!
+//! ## Bitfield enum layout
+//!
+//! A bitfield enum has the same layout as its `bitint` type.
+//!
+//! ## Bitfield enum trait implementations
+//!
+//! [Like bitfield structs](#bitfield-struct-trait-implementations), bitfield
+//! enums implement the [`Bitfield`] trait and its requirements. Attributes are
+//! passed through to the generated type, permitting doc comments and additional
+//! derives.
+//!
+//! ## Bitfield enum constructors and conversions
+//!
+//! Bitfield enums provide all of the [`Bitfield`] trait methods and conversions
+//! to and from the `bitint` and primitive type as `const` inherent methods.
+//!
+//! ```ignore
+//! impl MyBitfieldEnum {
+//!     pub const ZERO: Self;
+//!
+//!     pub const fn zero() -> Self;
+//!
+//!     pub const fn new(value: Self::Primitive) -> Option<Self>;
+//!
+//!     pub const fn new_masked(value: Self::Primitive) -> Self;
+//!
+//!     pub const unsafe fn new_unchecked(value: Self::Primitive) -> Self;
+//!
+//!     pub const fn from_bitint(value: Self::Bitint) -> Self;
+//!
+//!     // Only for primitive widths.
+//!     pub const fn from_primitive(value: u8) -> Self;
+//!
+//!     pub const fn to_bitint(self) -> Self::Bitint;
+//!
+//!     pub const fn to_primitive(self) -> Self::Primitive;
 //! }
 //! ```
+//!
+//! See the rustdoc on any generated bitfield enum type for details on behavior,
+//! invariants, cost, and safety.
 //!
 //! # Declaration syntax
 //!
@@ -275,6 +319,9 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![no_std]
+
+// For intra-doc links in the example module.
+extern crate self as mvbitfield;
 
 use core::fmt::Debug;
 use core::hash::Hash;
@@ -493,7 +540,8 @@ pub trait Bitfield:
 ///
 /// > Attributes
 /// >
-/// > * Any `doc` attributes are appended to documentation for accessor methods.
+/// > * Any `doc` attributes are included in rustdoc on the generated type and
+/// >   accessor methods, if this field has accessor methods.
 /// > * All other attributes are reserved and will cause a compile error.
 /// > * Omitted in the `..` form.
 /// >
@@ -532,6 +580,7 @@ pub trait Bitfield:
 /// >     * Unsigned primitive integer types of the field's width.
 /// >     * Unsigned `bitint` types of the field's width.
 /// >     * Bitfield struct types of the field's width.
+/// >     * Bitfield enum types of the field's width.
 /// >     * And any user-defined types that meet that condition.
 ///
 /// **Examples**
@@ -672,6 +721,7 @@ pub trait Bitfield:
 /// > * If present, determines the discriminant for this variant.
 /// > * If absent, the discriminant is zero for the first variant or the
 /// >   previous discriminant plus one for subsequent variants.
+/// > * All discriminants in a bitfield enum must be unique.
 ///
 /// **Examples**
 ///

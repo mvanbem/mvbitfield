@@ -300,7 +300,8 @@ fn generate_struct_impl(
             /// # Safety
             ///
             /// The value must be in range for the `bitint` type, as determined
-            /// by [`UBitint::is_in_range`](::bitint::UBitint::is_in_range).
+            /// by
+            /// [`UBitint::is_in_range`](::mvbitfield::bitint::UBitint::is_in_range).
             #[inline(always)]
             #[must_use]
             pub const unsafe fn new_unchecked(value: #struct_primitive_type) -> Self {
@@ -330,7 +331,7 @@ fn generate_struct_impl(
             /// Converts the value to the primitive type.
             ///
             /// The result is in range for the bitint type, as determined by
-            /// [`UBitint::is_in_range`].
+            /// [`UBitint::is_in_range`](::mvbitfield::bitint::UBitint::is_in_range).
             ///
             /// This zero-cost conversion is a convenience alias for converting
             /// through the `bitint` type.
@@ -754,10 +755,19 @@ fn generate_enum_impl(
             /// The type's zero value.
             pub const ZERO: Self = Self::from_bitint(#enum_bitint_type::ZERO);
 
+            /// Returns the type's zero value.
+            ///
+            /// This method is a `const` variant of
+            /// [`Bitfield::zero`](::mvbitfield::Bitfield::zero).
+            pub const fn zero() -> Self {
+                Self::ZERO
+            }
+
             /// Creates a bitfield value from a primitive value if it is in
             /// range for the `bitint` type.
             ///
-            /// This method is a `const` variant of [`Bitfield::new`].
+            /// This method is a `const` variant of
+            /// [`Bitfield::new`](::mvbitfield::Bitfield::new).
             #[inline(always)]
             #[must_use]
             pub const fn new(value: #enum_primitive_type) -> Option<Self> {
@@ -770,7 +780,8 @@ fn generate_enum_impl(
             /// Creates a bitfield value by masking off the upper bits of a
             /// primitive value.
             ///
-            /// This method is a `const` variant of [`Bitfield::new_masked`].
+            /// This method is a `const` variant of
+            /// [`Bitfield::new_masked`](::mvbitfield::Bitfield::new_masked).
             #[inline(always)]
             #[must_use]
             pub const fn new_masked(value: #enum_primitive_type) -> Self {
@@ -780,7 +791,8 @@ fn generate_enum_impl(
             /// Creates a bitfield value from a primitive value without checking
             /// whether it is in range for the `bitint` type.
             ///
-            /// This method is a const variant of [`Bitfield::new_unchecked`].
+            /// This method is a const variant of
+            /// [`Bitfield::new_unchecked`](::mvbitfield::Bitfield::new_unchecked).
             ///
             /// # Safety
             ///
@@ -827,7 +839,7 @@ fn generate_enum_impl(
             /// Converts the value to the primitive type.
             ///
             /// The result is in range for the `bitint` type, as determined by
-            /// [`UBitint::is_in_range`].
+            /// [`UBitint::is_in_range`](::mvbitfield::bitint::UBitint::is_in_range).
             ///
             /// This zero-cost conversion is a convenience alias for converting
             /// through the `bitint` type.
