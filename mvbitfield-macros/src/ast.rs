@@ -1,16 +1,20 @@
+use std::iter::{empty, once};
+
 use proc_macro2::Span;
+use syn::parse::discouraged::Speculative;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    braced, parenthesized, token, Attribute, Ident, LitInt, Path, Result, Token, Type, Visibility,
+    braced, parenthesized, token, Attribute, Error, Expr, ExprLit, Ident, LitInt, Path, Result,
+    Token, Type, Visibility,
 };
 
 pub struct Input {
     _paren_token: token::Paren,
     pub crate_path: Path,
     _comma_token: Token![,],
-    pub structs: Vec<Struct>,
+    pub items: Vec<Item>,
 }
 
 impl Parse for Input {
@@ -20,20 +24,48 @@ impl Parse for Input {
             _paren_token: parenthesized!(content in input),
             crate_path: content.parse()?,
             _comma_token: content.parse()?,
-            structs: {
-                let mut structs = Vec::new();
+            items: {
+                let mut items = Vec::new();
                 while !content.is_empty() {
-                    structs.push(content.parse()?);
+                    items.push(content.parse()?);
                 }
-                structs
+                items
             },
         })
     }
 }
 
-pub struct Struct {
+pub struct Item {
     pub attrs: Vec<Attribute>,
     pub visibility: Visibility,
+    pub kind: ItemKind,
+}
+
+pub enum ItemKind {
+    Struct(Struct),
+    Enum(Enum),
+}
+
+impl Parse for Item {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(Self {
+            attrs: input.call(Attribute::parse_outer)?,
+            visibility: input.parse()?,
+            kind: {
+                let lookahead = input.lookahead1();
+                if lookahead.peek(Token![struct]) {
+                    Ok(ItemKind::Struct(input.parse()?))
+                } else if lookahead.peek(Token![enum]) {
+                    Ok(ItemKind::Enum(input.parse()?))
+                } else {
+                    Err(lookahead.error())
+                }
+            }?,
+        })
+    }
+}
+
+pub struct Struct {
     _struct_token: Token![struct],
     pub name: Ident,
     _colon_token: Token![:],
@@ -46,8 +78,6 @@ impl Parse for Struct {
     fn parse(input: ParseStream) -> Result<Self> {
         let body;
         Ok(Self {
-            attrs: input.call(Attribute::parse_outer)?,
-            visibility: Visibility::parse(input)?,
             _struct_token: input.parse()?,
             name: input.parse()?,
             _colon_token: input.parse()?,
@@ -61,15 +91,15 @@ impl Parse for Struct {
 pub struct Field {
     pub attrs: Vec<Attribute>,
     pub visibility: Visibility,
-    variant: FieldVariant,
+    kind: FieldKind,
 }
 
-enum FieldVariant {
+enum FieldKind {
     Regular {
         name: FieldName,
         _colon_token: Token![:],
         width: FieldWidth,
-        accessor_type: AccessorType,
+        accessor: Accessor,
     },
     DotDot {
         dot_dot_token: Token![..],
@@ -77,9 +107,22 @@ enum FieldVariant {
 }
 
 impl Field {
+    pub fn iter_doc_literals(&self) -> impl Iterator<Item = Result<&ExprLit>> + '_ {
+        self.attrs.iter().map(|attr| match attr.path() {
+            path if path.is_ident("doc") => match attr.meta.require_name_value()?.value {
+                Expr::Lit(ref literal) => Ok(literal),
+                _ => Err(Error::new(attr.span(), "expected a literal value")),
+            },
+            _ => Err(Error::new(
+                attr.span(),
+                "forbidden attribute; only `doc` attributes are permitted",
+            )),
+        })
+    }
+
     pub fn name_to_string(&self) -> String {
-        match &self.variant {
-            FieldVariant::Regular {
+        match &self.kind {
+            FieldKind::Regular {
                 name: FieldName::Ident(ident),
                 ..
             } => ident.to_string(),
@@ -88,18 +131,18 @@ impl Field {
     }
 
     pub fn name_span(&self) -> Span {
-        match &self.variant {
-            FieldVariant::Regular { name, .. } => match name {
+        match &self.kind {
+            FieldKind::Regular { name, .. } => match name {
                 FieldName::Ident(ident) => ident.span(),
                 FieldName::Placeholder(underscore) => underscore.span(),
             },
-            FieldVariant::DotDot { dot_dot_token } => dot_dot_token.span(),
+            FieldKind::DotDot { dot_dot_token } => dot_dot_token.span(),
         }
     }
 
     pub fn width(&self) -> Result<Option<u8>> {
-        match &self.variant {
-            FieldVariant::Regular {
+        match &self.kind {
+            FieldKind::Regular {
                 width: FieldWidth::LitInt(lit_int),
                 ..
             } => Ok(Some(lit_int.base10_parse()?)),
@@ -108,19 +151,22 @@ impl Field {
     }
 
     pub fn width_span(&self) -> Span {
-        match &self.variant {
-            FieldVariant::Regular { width, .. } => match width {
+        match &self.kind {
+            FieldKind::Regular { width, .. } => match width {
                 FieldWidth::LitInt(lit_int) => lit_int.span(),
                 FieldWidth::Placeholder(underscore) => underscore.span(),
             },
-            FieldVariant::DotDot { dot_dot_token } => dot_dot_token.span(),
+            FieldKind::DotDot { dot_dot_token } => dot_dot_token.span(),
         }
     }
 
-    pub fn accessor_type(&self) -> AccessorType {
-        match &self.variant {
-            FieldVariant::Regular { accessor_type, .. } => accessor_type.clone(),
-            FieldVariant::DotDot { .. } => AccessorType::Default,
+    pub fn accessor(&self) -> Accessor {
+        match &self.kind {
+            FieldKind::Regular {
+                accessor: accessor_type,
+                ..
+            } => accessor_type.clone(),
+            FieldKind::DotDot { .. } => Accessor::Default,
         }
     }
 }
@@ -130,23 +176,23 @@ impl Parse for Field {
         Ok(Self {
             attrs: input.call(Attribute::parse_outer)?,
             visibility: input.parse()?,
-            variant: {
+            kind: {
                 let lookahead = input.lookahead1();
                 if lookahead.peek(Token![..]) {
-                    FieldVariant::DotDot {
+                    Ok(FieldKind::DotDot {
                         dot_dot_token: input.parse()?,
-                    }
+                    })
                 } else if lookahead.peek(Ident) | lookahead.peek(Token![_]) {
-                    FieldVariant::Regular {
+                    Ok(FieldKind::Regular {
                         name: input.parse()?,
                         _colon_token: input.parse()?,
                         width: input.parse()?,
-                        accessor_type: input.parse()?,
-                    }
+                        accessor: input.parse()?,
+                    })
                 } else {
-                    return Err(lookahead.error());
+                    Err(lookahead.error())
                 }
-            },
+            }?,
         })
     }
 }
@@ -188,21 +234,172 @@ impl Parse for FieldWidth {
 }
 
 #[derive(Clone)]
-pub enum AccessorType {
+pub enum Accessor {
     Overridden { as_token: Token![as], type_: Type },
     Default,
 }
 
-impl Parse for AccessorType {
+impl Parse for Accessor {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(Token![as]) {
-            Ok(AccessorType::Overridden {
+            Ok(Accessor::Overridden {
                 as_token: input.parse()?,
                 type_: input.parse()?,
             })
         } else {
-            Ok(AccessorType::Default)
+            Ok(Accessor::Default)
         }
+    }
+}
+
+pub struct Enum {
+    _enum_token: Token![enum],
+    pub name: Ident,
+    _colon_token: Token![:],
+    pub width: LitInt,
+    _brace_token: token::Brace,
+    pub elements: Option<EnumElements>,
+}
+
+impl Enum {
+    pub fn variants(&self) -> Box<dyn Iterator<Item = &Variant> + '_> {
+        match &self.elements {
+            Some(EnumElements::Variants { variants, .. }) => Box::new(
+                once(&variants.first).chain(variants.rest.iter().map(|(_comma, variant)| variant)),
+            ),
+            _ => Box::new(empty()),
+        }
+    }
+
+    pub fn dot_dot_token(&self) -> Option<&Token![..]> {
+        match &self.elements {
+            Some(EnumElements::Variants { dot_dot_token, .. }) => dot_dot_token.as_ref(),
+            Some(EnumElements::DotDot { dot_dot_token }) => Some(dot_dot_token),
+            None => None,
+        }
+    }
+}
+
+impl Parse for Enum {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let body;
+        Ok(Self {
+            _enum_token: input.parse()?,
+            name: input.parse()?,
+            _colon_token: input.parse()?,
+            width: input.parse()?,
+            _brace_token: braced!(body in input),
+            elements: if body.is_empty() {
+                None
+            } else {
+                let elements = body.parse()?;
+                if !body.is_empty() {
+                    panic!("unexpected trailing tokens. is this possible?");
+                }
+                Some(elements)
+            },
+        })
+    }
+}
+
+pub enum EnumElements {
+    Variants {
+        variants: Variants,
+        _trailing_comma: Option<Token![,]>,
+        dot_dot_token: Option<Token![..]>,
+    },
+    DotDot {
+        dot_dot_token: Token![..],
+    },
+}
+
+impl Parse for EnumElements {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if input.peek(Token![..]) {
+            Ok(Self::DotDot {
+                dot_dot_token: input.parse()?,
+            })
+        } else {
+            let variants = input.parse()?;
+            let mut _trailing_comma = None;
+            let mut dot_dot_token = None;
+            if input.peek(Token![,]) {
+                _trailing_comma = Some(input.parse()?);
+                if input.peek(Token![..]) {
+                    dot_dot_token = Some(input.parse()?);
+                }
+            }
+            Ok(Self::Variants {
+                variants,
+                _trailing_comma,
+                dot_dot_token,
+            })
+        }
+    }
+}
+
+pub struct Variants {
+    pub first: Variant,
+    pub rest: Vec<(Token![,], Variant)>,
+}
+
+impl Parse for Variants {
+    fn parse(input: ParseStream) -> Result<Self> {
+        fn parse_rest_element(input: ParseStream) -> Result<(Token![,], Variant)> {
+            Ok((input.parse()?, input.parse()?))
+        }
+
+        fn try_parse_rest_element(input: ParseStream) -> Option<(Token![,], Variant)> {
+            let fork = input.fork();
+            match parse_rest_element(&fork) {
+                Ok(pair) => {
+                    input.advance_to(&fork);
+                    Some(pair)
+                }
+                Err(_) => None,
+            }
+        }
+
+        Ok(Self {
+            first: input.parse()?,
+            rest: std::iter::from_fn(|| try_parse_rest_element(input)).collect(),
+        })
+    }
+}
+
+pub struct Variant {
+    pub attrs: Vec<Attribute>,
+    pub name: Ident,
+    pub discriminant: Option<Discriminant>,
+}
+
+impl Parse for Variant {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(Self {
+            attrs: input.call(Attribute::parse_outer)?,
+            name: input.parse()?,
+            discriminant: {
+                if input.peek(Token![=]) {
+                    Some(input.parse()?)
+                } else {
+                    None
+                }
+            },
+        })
+    }
+}
+
+pub struct Discriminant {
+    _eq_token: Token![=],
+    pub literal: LitInt,
+}
+
+impl Parse for Discriminant {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(Self {
+            _eq_token: input.parse()?,
+            literal: input.parse()?,
+        })
     }
 }
 
@@ -215,14 +412,17 @@ mod tests {
     #[test]
     fn struct_empty() {
         let input = quote! { struct Foo: 32 {} };
-        let Struct {
+        let Item {
             attrs,
             visibility,
-            name,
-            width,
-            fields,
-            ..
-        } = syn::parse2(input).unwrap();
+            kind:
+                ItemKind::Struct(Struct {
+                    name,
+                    width,
+                    fields,
+                    ..
+                }),
+        } = syn::parse2(input).unwrap() else { panic!() };
         assert!(attrs.is_empty());
         assert_eq!(quote! { #visibility }.to_string(), "");
         assert_eq!(quote! { #name }.to_string(), "Foo");
@@ -238,14 +438,17 @@ mod tests {
                 field: 1
             }
         };
-        let Struct {
+        let Item {
             attrs,
             visibility,
-            name,
-            width,
-            fields,
-            ..
-        } = syn::parse2(input).unwrap();
+            kind:
+                ItemKind::Struct(Struct {
+                    name,
+                    width,
+                    fields,
+                    ..
+                }),
+        } = syn::parse2(input).unwrap() else { panic!() };
         assert_eq!(attrs.len(), 1);
         let attr = &attrs[0];
         assert_eq!(
@@ -264,10 +467,10 @@ mod tests {
         let Field {
             attrs,
             visibility: Visibility::Inherited,
-            variant: FieldVariant::Regular {
+            kind: FieldKind::Regular {
                 name: FieldName::Ident(name),
                 width: FieldWidth::LitInt(width),
-                accessor_type: AccessorType::Default,
+                accessor: Accessor::Default,
                 ..
             },
         } = syn::parse2(input).unwrap() else { panic!() };
@@ -282,11 +485,11 @@ mod tests {
         let Field {
             attrs,
             visibility,
-            variant: FieldVariant::Regular {
+            kind: FieldKind::Regular {
                 name: FieldName::Ident(name),
                 width: FieldWidth::LitInt(width),
-                accessor_type:
-                    AccessorType::Overridden {
+                accessor:
+                    Accessor::Overridden {
                         type_: accessor_type,
                         ..
                     },
@@ -306,7 +509,7 @@ mod tests {
         assert!(matches!(
             syn::parse2(input).unwrap(),
             Field {
-                variant: FieldVariant::DotDot { .. },
+                kind: FieldKind::DotDot { .. },
                 ..
             },
         ));

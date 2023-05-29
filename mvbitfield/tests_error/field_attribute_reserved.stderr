@@ -1,0 +1,11 @@
+error: forbidden attribute; only `doc` attributes are permitted
+ --> tests_error/field_attribute_reserved.rs:5:9
+  |
+5 |         #[this_is_not_a_doc_attribute]
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: forbidden attribute; only `doc` attributes are permitted
+  --> tests_error/field_attribute_reserved.rs:10:9
+   |
+10 |         #[this_is_also_not_a_doc_attribute]
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

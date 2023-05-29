@@ -1,16 +1,17 @@
-//! `mvbitfield` generates bitfield struct types that can insert and extract
-//! bit-aligned fields.
+//! `mvbitfield` generates types to work with bit-aligned fields.
 //!
 //! Bitfield structs serve roughly the same use cases as C/C++ structs with
-//! bit-field members.
-//!
-//! The generated bitfield structs are:
+//! bit-field members and are:
 //!
 //! - **Endian-insensitive**, packing fields within an integer rather than
 //!   across bytes or array elements.
 //! - **Flexible and type-safe** with optional user-defined field accessor
 //!   types.
 //! - **Suitable for FFI and memory-mapped I/O** with care, as always.
+//!
+//! Bitfield enums are unit-only Rust enums with a declared bit width that
+//! provide safe zero-cost conversions to and from an integer type and can be
+//! used as accessors in a bitfield struct.
 //!
 //! # Demo
 //!
@@ -24,10 +25,10 @@
 //!     #[lsb_first]               // Field packing order.
 //!     #[derive(PartialOrd, Ord)] // Other attributes are passed through.
 //!     pub struct MyBitfieldStruct: 32 {
-//!         // The lowest 3 bits with public bitint::U3 accessors.
+//!         // The lowest three bits with public bitint::U3 accessors.
 //!         pub some_number: 3,
 //!
-//!         // The next 8 bits with public bitint::U8 accessors.
+//!         // The next eight bits with public bitint::U8 accessors.
 //!         pub another_number: 8,
 //!
 //!         // No accessors for field names starting with _.
@@ -36,11 +37,26 @@
 //!         // Private bitint::U11 accessors.
 //!         internal_number: 11,
 //!
-//!         // Skip unused bits, in this case 7 bits.
+//!         // Skip unused bits, in this case five bits.
 //!         ..,
+//!
+//!         // The two next-to-most significant bits with public MyBitfieldEnum
+//!         // accessors.
+//!         pub an_enum: 2 as MyBitfieldEnum,
 //!
 //!         // Private bool accessors.
 //!         high_bit_flag: 1 as bool,
+//!     }
+//!
+//!     pub enum MyBitfieldEnum: 2 {
+//!         // Declare up to 2^width unit variants with optional explicit
+//!         // discriminants.
+//!         Three = 3,
+//!         Zero = 0,
+//!         One,
+//!
+//!         // Generates `Unused2` to complete the enum.
+//!         ..
 //!     }
 //! }
 //!
@@ -51,6 +67,7 @@
 //!         .with_some_number(6_U3)
 //!         .with_another_number(0xa5_U8)
 //!         .with_internal_number(1025_U11)
+//!         .with_an_enum(MyBitfieldEnum::One)
 //!         .with_high_bit_flag(true);
 //!
 //!     // Default accessors return bitints.
@@ -63,18 +80,42 @@
 //!
 //!     // Custom accessors return the chosen type, which must have Into
 //!     // conversions to and from the default accessor bitint.
+//!     assert_eq!(x.an_enum(), MyBitfieldEnum::One);
 //!     assert_eq!(x.high_bit_flag(), true);
 //!
 //!     // Zero-cost conversions to and from bitints and to primitive.
-//!     assert_eq!(x.to_bitint(), 0b1_0000000_10000000001_00_10100101_110_U32);
-//!     assert_eq!(x.to_primitive(), 0b1_0000000_10000000001_00_10100101_110);
-//!     assert_eq!(x, MyBitfieldStruct::from_bitint(0x8080252e_U32));
+//!     // For bitfield structs:
+//!     assert_eq!(x.to_bitint(), 0b1_01_00000_10000000001_00_10100101_110_U32);
+//!     assert_eq!(x.to_primitive(), 0b1_01_00000_10000000001_00_10100101_110);
+//!     assert_eq!(x, MyBitfieldStruct::from_bitint(0xa080252e_U32));
+//!     // For bitfield enums:
+//!     assert_eq!(MyBitfieldEnum::One.to_bitint(), 1_U2);
+//!     assert_eq!(MyBitfieldEnum::One.to_primitive(), 1);
+//!     assert_eq!(MyBitfieldEnum::One, MyBitfieldEnum::from_bitint(1_U2));
 //!
 //!     // Zero-cost conversion from primitive, only for primitive-sized
-//!     // bitfield structs.
-//!     assert_eq!(x, MyBitfieldStruct::from_primitive(0x8080252e));
+//!     // bitfield structs and enums.
+//!     assert_eq!(x, MyBitfieldStruct::from_primitive(0xa080252e));
+//!     bitfield! { enum MyEightBitEnum: 8 { X = 192, .. } }
+//!     assert_eq!(MyEightBitEnum::X, MyEightBitEnum::from_primitive(192));
+//!
+//!     // Bitfield enums optionally generate placeholder variants for unused
+//!     // discriminants with `..`. The name is always "Unused" followed by the
+//!     // discriminant value in base 10.
+//!     assert_eq!(MyBitfieldEnum::Unused2.to_bitint(), 2_U2);
+//!     assert_eq!(MyBitfieldEnum::Unused2, MyBitfieldEnum::from_bitint(2_U2));
 //! }
 //! ```
+//!
+//! # Associated types
+//!
+//! Bitfield types have two associated types: a `bitint` type and a primitive
+//! type. The `bitint` type is the bitfield type's canonical integer
+//! representation and is one of the 128 unsigned types from the [`mod@bitint`]
+//! crate. The primitive type is the `bitint` type's primitive type.
+//!
+//! The [`Bitfield::Bitint`], [`Bitfield::Primitive`], and
+//! [`UBitint::Primitive`] associated types model these relationships.
 //!
 //! # Bitfield structs
 //!
@@ -89,7 +130,7 @@
 //! [`BitfieldStruct32`](example::BitfieldStruct32) for [`bitfield!`]
 //! invocations and the resulting generated types.
 //!
-//! ## Packing
+//! ## Bitfield struct packing
 //!
 //! Fields occupy contiguous ranges of bits and are tightly packed in
 //! declaration order. Each bit must be covered by precisely one field. The `..`
@@ -101,17 +142,7 @@
 //! attribute](bitfield!#packing-order-attributes). If there is only one field,
 //! it must cover every bit and the packing order attribute is optional.
 //!
-//! ## Associated types
-//!
-//! Bitfield structs have two associated types: a `bitint` type and a primitive
-//! type. The `bitint` type is the bitfield struct's canonical integer
-//! representation and is one of the 128 unsigned types from the [`mod@bitint`]
-//! crate. The primitive type is the `bitint` type's primitive type.
-//!
-//! The [`BitfieldStruct::Bitint`], [`BitfieldStruct::Primitive`], and
-//! [`UBitint::Primitive`] associated types model these relationships.
-//!
-//! ## Layout
+//! ## Bitfield struct layout
 //!
 //! A bitfield struct has the same layout as its `bitint` type. Bitfield structs
 //! of widths 8, 16, 32, 64, or 128 are particularly well suited for
@@ -120,10 +151,9 @@
 //! widths require more care in unsafe contexts because their `bitint` types
 //! have unused upper bits that must remain clear.
 //!
-//! ## Trait implementations
+//! ## Bitfield struct trait implementations
 //!
-//! Bitfield structs implement the [`BitfieldStruct`] trait and its
-//! requirements:
+//! Bitfield structs implement the [`Bitfield`] trait and its requirements:
 //!
 //! - [`Copy`] (and [`Clone`])
 //! - [`Debug`]
@@ -162,52 +192,124 @@
 //! assert!(MyStruct::zero() < MyStruct::zero().with_high_bit(true));
 //! ```
 //!
-//! ## Constructors and conversions
+//! ## Bitfield struct constructors and conversions
 //!
-//! Bitfield structs provide all of the [`BitfieldStruct`] trait methods and
+//! Bitfield structs provide all of the [`Bitfield`] trait methods and
 //! conversions to and from the `bitint` and primitive type as `const` inherent
 //! methods.
 //!
 //! ```ignore
 //! impl MyBitfieldStruct {
-//!     const fn zero() -> Self;
+//!     pub const ZERO: Self;
 //!
-//!     const fn new(value: Self::Primitive) -> Option<Self>;
+//!     pub const fn zero() -> Self;
 //!
-//!     const fn new_masked(value: Self::Primitive) -> Self;
+//!     pub const fn new(value: Self::Primitive) -> Option<Self>;
 //!
-//!     const unsafe fn new_unchecked(value: Self::Primitive) -> Self;
+//!     pub const fn new_masked(value: Self::Primitive) -> Self;
 //!
-//!     const fn from_bitint(value: Self::Bitint) -> Self;
+//!     pub const unsafe fn new_unchecked(value: Self::Primitive) -> Self;
+//!
+//!     pub const fn from_bitint(value: Self::Bitint) -> Self;
 //!
 //!     // Only for primitive widths.
-//!     const fn from_primitive(value: Self::Primitive) -> Self;
+//!     pub const fn from_primitive(value: Self::Primitive) -> Self;
 //!
-//!     const fn to_bitint(self) -> Self::Bitint;
+//!     pub const fn to_bitint(self) -> Self::Bitint;
 //!
-//!     const fn to_primitive(self) -> Self::Primitive;
+//!     pub const fn to_primitive(self) -> Self::Primitive;
 //! }
 //! ```
+//!
+//! See the rustdoc on any generated bitfield struct type for details on
+//! behavior, invariants, cost, and safety.
 //!
 //! ## Field accessors
 //!
 //! ```ignore
 //! impl MyBitfieldStruct {
-//!     fn my_field(self) -> T;
+//!     pub fn my_field(self) -> T;
 //!
-//!     fn with_my_field(self, value: T) -> Self;
+//!     pub fn with_my_field(self, value: T) -> Self;
 //!
-//!     fn map_my_field(self, f: impl FnOnce(T) -> T) -> Self;
+//!     pub fn map_my_field(self, f: impl FnOnce(T) -> T) -> Self;
 //!
-//!     fn set_my_field(&mut self, value: T);
+//!     pub fn set_my_field(&mut self, value: T);
 //!
-//!     fn replace_my_field(&mut self, value: T) -> T;
+//!     pub fn replace_my_field(&mut self, value: T) -> T;
 //!
-//!     fn update_my_field(&mut self, f: impl FnOnce(T) -> T) -> T;
+//!     pub fn update_my_field(&mut self, f: impl FnOnce(T) -> T) -> T;
 //! }
 //! ```
 //!
 //! where `my_field` is the field name and `T` is the field accessor type.
+//!
+//! Note that field accessor methods are not `const` because they rely on
+//! [`Into`] conversions (plus [`FnOnce`] invocations for `map` and `update`),
+//! which cannot be `const` as of Rust 1.69.
+//!
+//! # Bitfield enums
+//!
+//! Bitfield enums are unit-only/fieldless Rust enums that have a declared bit
+//! width and corresponding `bitint` type. A bitfield enum with width _n_ has
+//! precisely _2ⁿ_ variants, one for each of the `bitint` type's valid primitive
+//! values. This allows for sound zero-cost conversions to and from the `bitint`
+//! type.
+//!
+//! A maximum width is currently enforced at 10 bits to keep compile times and
+//! memory usage reasonable.
+//!
+//! **Examples**
+//!
+//! See [`BitfieldEnum1`](example::BitfieldEnum1) and
+//! [`BitfieldEnum3`](example::BitfieldEnum3) for practical [`bitfield!`]
+//! invocations and the resulting generated types. See
+//! [`BitfieldEnum8`](example::BitfieldEnum8) for a perhaps impractically large
+//! bitfield enum that has primitive width, allowing an additional zero-cost
+//! [`from_primitive`](example::BitfieldEnum8::from_primitive) method and
+//! `From<u8>` impl in place of `TryFrom<u8>`.
+//!
+//! ## Bitfield enum layout
+//!
+//! A bitfield enum has the same layout as its `bitint` type.
+//!
+//! ## Bitfield enum trait implementations
+//!
+//! [Like bitfield structs](#bitfield-struct-trait-implementations), bitfield
+//! enums implement the [`Bitfield`] trait and its requirements. Attributes are
+//! passed through to the generated type, permitting doc comments and additional
+//! derives.
+//!
+//! ## Bitfield enum constructors and conversions
+//!
+//! Bitfield enums provide all of the [`Bitfield`] trait methods and conversions
+//! to and from the `bitint` and primitive type as `const` inherent methods.
+//!
+//! ```ignore
+//! impl MyBitfieldEnum {
+//!     pub const ZERO: Self;
+//!
+//!     pub const fn zero() -> Self;
+//!
+//!     pub const fn new(value: Self::Primitive) -> Option<Self>;
+//!
+//!     pub const fn new_masked(value: Self::Primitive) -> Self;
+//!
+//!     pub const unsafe fn new_unchecked(value: Self::Primitive) -> Self;
+//!
+//!     pub const fn from_bitint(value: Self::Bitint) -> Self;
+//!
+//!     // Only for primitive widths.
+//!     pub const fn from_primitive(value: u8) -> Self;
+//!
+//!     pub const fn to_bitint(self) -> Self::Bitint;
+//!
+//!     pub const fn to_primitive(self) -> Self::Primitive;
+//! }
+//! ```
+//!
+//! See the rustdoc on any generated bitfield enum type for details on behavior,
+//! invariants, cost, and safety.
 //!
 //! # Declaration syntax
 //!
@@ -217,6 +319,9 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![no_std]
+
+// For intra-doc links in the example module.
+extern crate self as mvbitfield;
 
 use core::fmt::Debug;
 use core::hash::Hash;
@@ -239,17 +344,17 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// Bitfield struct types.
+/// Bitfield struct and enum types.
 ///
-/// Bitfield structs have a [`mod@bitint`] type and a primitive type. The
-/// `bitint` type is the canonical integer representation. The primitive type is
-/// the `bitint` type's primitive type.
+/// Bitfield structs and enums have a [`mod@bitint`] type and a primitive type.
+/// The `bitint` type is the canonical integer representation. The primitive
+/// type is the `bitint` type's primitive type.
 ///
 /// There are zero-cost conversions between the `Self` and the `bitint` type,
 /// and from `Self` to the primitive type. There is a checked conversion from
 /// the primitive type to `Self`, though some implementors may separately
 /// provide a zero-cost conversion from the primitive type to `Self`.
-pub trait BitfieldStruct:
+pub trait Bitfield:
     Copy
     + Debug
     + Eq
@@ -259,7 +364,7 @@ pub trait BitfieldStruct:
     + Into<Self::Bitint>
     + Into<Self::Primitive>
 {
-    /// The bitfield struct's canonical integer representation.
+    /// The bitfield's canonical integer representation.
     type Bitint: UBitint<Primitive = Self::Primitive> + From<Self> + Into<Self>;
 
     /// The `bitint` type's primitive type.
@@ -275,18 +380,18 @@ pub trait BitfieldStruct:
         Self::ZERO
     }
 
-    /// Creates a bitfield struct value from a primitive value if it is in range
-    /// for the `bitint` type.
+    /// Creates a bitfield value from a primitive value if it is in range for
+    /// the `bitint` type.
     #[must_use]
     fn new(value: Self::Primitive) -> Option<Self>;
 
-    /// Creates a bitfield struct value by masking off the upper bits of a
+    /// Creates a bitfield value by masking off the upper bits of a
     /// primitive value.
     #[must_use]
     fn new_masked(value: Self::Primitive) -> Self;
 
-    /// Creates a bitfield struct value from a primitive value without checking
-    /// whether it is in range for the `bitint` type.
+    /// Creates a bitfield value from a primitive value without checking whether
+    /// it is in range for the `bitint` type.
     ///
     /// This is a zero-cost conversion.
     ///
@@ -298,7 +403,7 @@ pub trait BitfieldStruct:
     unsafe fn new_unchecked(value: Self::Primitive) -> Self;
 }
 
-/// Generates bitfield struct types.
+/// Generates bitfield types.
 ///
 /// This page uses [notation from The Rust
 /// Reference](https://doc.rust-lang.org/reference/notation.html) for syntax
@@ -309,13 +414,19 @@ pub trait BitfieldStruct:
 /// # Input
 ///
 /// A `bitfield!` macro invocation must receive one _Input_ declaring zero or
-/// more structs.
+/// more items, which may be structs or enums.
 ///
 /// > **Syntax**
 /// >
 /// > _Input_ :
 /// >
-/// > > _Struct_<sup>\*</sup>
+/// > > _Item_<sup>\*</sup>
+/// >
+/// > _Item_ :
+/// >
+/// > > _Struct_
+/// >
+/// > > | _Enum_
 ///
 /// ## Bitfield struct declarations
 ///
@@ -329,7 +440,7 @@ pub trait BitfieldStruct:
 /// >
 /// > _Fields_ :
 /// >
-/// > >  _Fields_ (`,` _Field_)<sup>\*</sup> `,`<sup>?</sup>
+/// > >  _Field_ (`,` _Field_)<sup>\*</sup> `,`<sup>?</sup>
 ///
 /// **Properties**
 ///
@@ -429,7 +540,9 @@ pub trait BitfieldStruct:
 ///
 /// > Attributes
 /// >
-/// > * Currently reserved: Specifying a field attribute causes a compile error.
+/// > * Any `doc` attributes are included in rustdoc on the generated type and
+/// >   accessor methods, if this field has accessor methods.
+/// > * All other attributes are reserved and will cause a compile error.
 /// > * Omitted in the `..` form.
 /// >
 /// > Visibility
@@ -467,6 +580,7 @@ pub trait BitfieldStruct:
 /// >     * Unsigned primitive integer types of the field's width.
 /// >     * Unsigned `bitint` types of the field's width.
 /// >     * Bitfield struct types of the field's width.
+/// >     * Bitfield enum types of the field's width.
 /// >     * And any user-defined types that meet that condition.
 ///
 /// **Examples**
@@ -476,6 +590,7 @@ pub trait BitfieldStruct:
 /// > bitfield! {
 /// >     #[lsb_first]
 /// >     pub struct MyStruct: 10 {
+/// >         /// Doc comments are permitted.
 /// >         pub my_bitint_field_a: 5,
 /// >         pub my_bitint_field_b: 5 as U5
 /// >     }
@@ -511,16 +626,157 @@ pub trait BitfieldStruct:
 /// > ```
 /// >
 /// > `MyAccessor` is a bitfield struct with one private 4-bit field and no
-/// > accessors. The field is declared with a flexible width and resolved to
-/// > four bits at macro processing time to fill its bitfield struct. The field
+/// > accessors. The field is declared with a flexible width, resolved to four
+/// > bits at macro processing time to fill its bitfield struct. The field
 /// > declarations `_: _` and `..` are equivalent.
 /// >
-/// > A public 4-bit field with `MyAccessor` accessors. The `MyAccessor` type is
-/// > another bitfield struct in this example, but could be any other type
-/// > having `impl From<U4> for MyAccessor` and `impl From<MyAccessor> for U4`.
+/// > `MyStruct` has a public 4-bit field with `MyAccessor` accessors. The
+/// > `MyAccessor` type is another bitfield struct in this example, but could be
+/// > any other type having `impl Into<U4> for MyAccessor` and `impl
+/// > Into<MyAccessor> for U4`.
+///
+/// ## Bitfield enum declarations
+///
+/// **Syntax**
+///
+/// > _Enum_ :
 /// >
-/// > \
+/// > > [_OuterAttribute_][RefAttr]<sup>\*</sup>
+/// > > [_Visibility_][RefVis]<sup>?</sup> `enum` [IDENTIFIER][RefIdent] `:`
+/// > > [INTEGER_LITERAL][RefLitInt] `{` _EnumElements_<sup>?</sup> `}`
 /// >
+/// > _EnumElements_ :
+/// >
+/// > > _Variants_ (`,` | `,` `..`)<sup>?</sup>
+/// >
+/// > > | `..`
+/// >
+/// > _Variants_ :
+/// >
+/// > > _Variant_ (`,` _Variant_)<sup>\*</sup>
+///
+/// **Properties**
+///
+/// > Attributes
+/// >
+/// > * Applied to the generated type.
+/// >
+/// > Visibility
+/// >
+/// > * Applied to the generated type.
+/// >
+/// > Name
+/// >
+/// > * Names the generated type.
+/// >
+/// > Width
+/// >
+/// > * The bit width for discriminants. Determines the bitfield enum's `bitint`
+/// >   and primitive types.
+/// >
+/// > Variants
+/// >
+/// > * Zero or more [bitfield enum variants](#bitfield-enum-variants).
+/// >
+/// > `..`
+/// >
+/// > * If present, any unused discriminants will produce placeholder variants
+/// >   instead of causing a compile error.
+///
+/// **Example**
+///
+/// > ```
+/// > # use mvbitfield::prelude::*;
+/// > bitfield! {
+/// >     pub enum MyEnum: 3 { .. }
+/// > }
+/// > ```
+/// >
+/// > This bitfield enum is three bits wide, so its bitint type is
+/// > [`U3`](bitint::U3) and its primitive type is [`u8`].
+///
+/// ## Bitfield enum variants
+///
+/// Each variant declaration allocates a name and a discriminant.
+///
+/// **Syntax**
+///
+/// > _Variant_ :
+/// >
+/// > > [_OuterAttribute_][RefAttr]<sup>\*</sup> [IDENTIFIER][RefIdent] (`=`
+/// > > [INTEGER_LITERAL][RefLitInt] )<sup>?</sup>
+///
+/// **Properties**
+///
+/// > Attributes
+/// >
+/// > * Applied to the generated variant.
+/// >
+/// > Name
+/// >
+/// > * Names the variant.
+/// >
+/// > Discriminant
+/// >
+/// > * If present, determines the discriminant for this variant.
+/// > * If absent, the discriminant is zero for the first variant or the
+/// >   previous discriminant plus one for subsequent variants.
+/// > * All discriminants in a bitfield enum must be unique.
+///
+/// **Examples**
+///
+/// > ```
+/// > # use mvbitfield::prelude::*;
+/// > bitfield! {
+/// >     pub enum MyEnum: 1 {
+/// >         /// Doc comments are permitted.
+/// >         X,
+/// >         Y,
+/// >     }
+/// > }
+/// > ```
+/// >
+/// > Two variants:
+/// >
+/// > * `X` with discriminant `0_U1`
+/// > * `Y` with discriminant `1_U1`
+///
+/// > ```
+/// > # use mvbitfield::prelude::*;
+/// > bitfield! {
+/// >     pub enum MyEnum: 2 {
+/// >         Y = 1,
+/// >         Z,
+/// >         W,
+/// >         X = 0,
+/// >     }
+/// > }
+/// > ```
+/// >
+/// > Four variants:
+/// >
+/// > * `X` with discriminant `0_U2`
+/// > * `Y` with discriminant `1_U2`
+/// > * `Z` with discriminant `2_U2`
+/// > * `W` with discriminant `3_U2`
+///
+/// > ```
+/// > # use mvbitfield::prelude::*;
+/// > bitfield! {
+/// >     pub enum MyEnum: 2 {
+/// >         Y = 1,
+/// >         ..
+/// >     }
+/// > }
+/// > ```
+/// >
+/// > Four variants:
+/// >
+/// > * `Unused0` with discriminant `0_U2`
+/// > * `Y` with discriminant `1_U2`
+/// > * `Unused2` with discriminant `2_U2`
+/// > * `Unused3` with discriminant `3_U2`
+///
 /// [RefAttr]: https://doc.rust-lang.org/reference/attributes.html
 /// [RefIdent]: https://doc.rust-lang.org/reference/identifiers.html
 /// [RefLitInt]:

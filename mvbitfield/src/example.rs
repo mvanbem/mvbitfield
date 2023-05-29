@@ -20,13 +20,17 @@ bitfield! {
     /// #     struct CustomPrimitive8: 8 { .. }
     /// # }
     /// bitfield! {
-    ///     /// A bitfield struct wrapping a `U24` `bitint`.
     ///     #[lsb_first]
     ///     pub struct BitfieldStruct24: 24 {
+    ///         /// A 1-bit field with [`U1`] accessors.
     ///         pub bit: 1,
+    ///         /// A 1-bit field with [`bool`] accessors.
     ///         pub flag: 1 as bool,
+    ///         /// A 5-bit field with [`U5`] accessors.
     ///         pub multi_bit: 5,
+    ///         /// A 3-bit field with [`CustomBitint3`] accessors.
     ///         pub custom_bitint: 3 as CustomBitint3,
+    ///         /// An 8-bit field with [`CustomPrimitive8`] accessors.
     ///         pub custom_primitive: 8 as CustomPrimitive8,
     ///         ..
     ///     }
@@ -34,10 +38,15 @@ bitfield! {
     /// ```
     #[lsb_first]
     pub struct BitfieldStruct24: 24 {
+        /// A 1-bit field with [`U1`] accessors.
         pub bit: 1,
+        /// A 1-bit field with [`bool`] accessors.
         pub flag: 1 as bool,
+        /// A 5-bit field with [`U5`] accessors.
         pub multi_bit: 5,
+        /// A 3-bit field with [`CustomBitint3`] accessors.
         pub custom_bitint: 3 as CustomBitint3,
+        /// An 8-bit field with [`CustomPrimitive8`] accessors.
         pub custom_primitive: 8 as CustomPrimitive8,
         ..
     }
@@ -59,7 +68,6 @@ bitfield! {
     /// #     struct CustomPrimitive8: 8 { .. }
     /// # }
     /// bitfield! {
-    ///     /// A bitfield struct wrapping a `u32`.
     ///     #[lsb_first]
     ///     pub struct BitfieldStruct32: 32 {
     ///         pub bit: 1,
@@ -80,6 +88,74 @@ bitfield! {
         pub custom_primitive: 8 as CustomPrimitive8,
         ..
     }
+
+    /// A bitfield enum one bit wide.
+    ///
+    /// This type is convertible to and from [`U1`].
+    ///
+    /// # Declaration
+    ///
+    /// ```
+    /// # use mvbitfield::prelude::*;
+    /// bitfield! {
+    ///     pub enum BitfieldEnum1: 1 {
+    ///         /// Logical false.
+    ///         False,
+    ///         /// Logical true.
+    ///         True,
+    ///     }
+    /// }
+    /// ```
+    pub enum BitfieldEnum1: 1 {
+        /// Logical false.
+        False,
+        /// Logical true.
+        True,
+    }
+
+    /// A bitfield enum three bits wide.
+    ///
+    /// This type is convertible to and from [`U3`].
+    ///
+    /// # Declaration
+    ///
+    /// ```
+    /// # use mvbitfield::prelude::*;
+    /// bitfield! {
+    ///     pub enum BitfieldEnum3: 3 {
+    ///         /// The value `2`.
+    ///         Two = 2,
+    ///         /// The value `7`.
+    ///         Seven = 7,
+    ///         /// The value `5`.
+    ///         Five = 5,
+    ///         ..
+    ///     }
+    /// }
+    /// ```
+    pub enum BitfieldEnum3: 3 {
+        /// The value `2`.
+        Two = 2,
+        /// The value `7`.
+        Seven = 7,
+        /// The value `5`.
+        Five = 5,
+        ..
+    }
+
+    /// A bitfield enum eight bits wide.
+    ///
+    /// This type is convertible to and from [`U8`] and `u8`.
+    ///
+    /// # Declaration
+    ///
+    /// ```
+    /// # use mvbitfield::prelude::*;
+    /// bitfield! {
+    ///     pub enum BitfieldEnum8: 8 { .. }
+    /// }
+    /// ```
+    pub enum BitfieldEnum8: 8 { .. }
 }
 
 /// A custom bitfield accessor that wraps a [`U3`] `bitint`.
